@@ -1,27 +1,48 @@
-import vulkan_hpp;
+#define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
+#include <vulkan/vulkan_raii.hpp>
 
 #include <iostream>
-#include <stdexcept>
 #include <cstdlib>
+#include <cstdint>
+
+constexpr uint32_t WIDTH = 800;
+constexpr uint32_t HEIGHT = 600;
 
 class Pong {
     public:
         void run() {
-
+            initVulkan();
+            initWindow();
+            mainLoop();
+            cleanup();
         }
 
     private:
+        GLFWwindow* window;
+
         void initVulkan() {
 
         }
 
-        void mainLoop() {
+        void initWindow() {
+            glfwInit();
 
+            glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+            glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+
+            window = glfwCreateWindow(WIDTH, HEIGHT, "Pong", nullptr, nullptr);
+        }
+
+        void mainLoop() {
+            while (!glfwWindowShouldClose(window)) {
+                glfwPollEvents();
+            }
         }
 
         void cleanup() {
-
+            glfwDestroyWindow(window);
+            glfwTerminate();
         }
 
 };
