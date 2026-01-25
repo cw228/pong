@@ -1,0 +1,21 @@
+# Build
+build/
+cmake-build-*/
+
+# Compiled files
+*.o
+*.so
+*.a
+
+# compile_commands.json symlink in project root
+compile_commands.json
+
+# Editor/IDE
+.cache/
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
