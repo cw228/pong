@@ -37,9 +37,23 @@ class Pong {
         }
 
     private:
+        static VKAPI_ATTR vk::Bool32 VKAPI_CALL debugCallback(
+            vk::DebugUtilsMessageSeverityFlagBitsEXT severity, 
+            vk::DebugUtilsMessageTypeFlagsEXT type, 
+            const vk::DebugUtilsMessengerCallbackDataEXT* pCallbackData, 
+            void*
+        ) {
+            std::cerr << to_string(type) << " " << pCallbackData->pMessage << std::endl;
+            return vk::False;
+        }
+
+        // mk:members
         GLFWwindow* window;
         vk::raii::Context context;
         vk::raii::Instance instance = nullptr;
+        vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;
+        vk::raii::PhysicalDevice physicalDevice = nullptr;
+        std::vector<const char*> deviceExtensions = { vk::KHRSwapchainExtensionName };
 
         void initWindow() {
             glfwInit();
@@ -52,6 +66,8 @@ class Pong {
 
         void initVulkan() {
             createInstance();
+            setupDebugMessenger();
+            pickPhysicalDevice();
         }
 
         void mainLoop() {
@@ -74,25 +90,68 @@ class Pong {
                 .apiVersion         = vk::ApiVersion14 
             };
 
-            std::vector<const char*> requiredLayers;
-            if (enableValidationLayers) {
-                requiredLayers.assign(validationLayers.begin(), validationLayers.end());
-            }
+            std::vector<const char*> requiredLayers = getRequiredLayers();
             ensureLayersSupported(requiredLayers);
 
-            uint32_t glfwRequiredExtensionCount = 0;
-            const char** glfwRequiredExtensions = glfwGetRequiredInstanceExtensions(&glfwRequiredExtensionCount);
-            ensureExtensionsSupported(glfwRequiredExtensions, glfwRequiredExtensionCount);
+            std::vector<const char*> requiredExtentions = getRequiredExtentions();
+            ensureExtensionsSupported(requiredExtentions);
 
             vk::InstanceCreateInfo createInfo{
                 .pApplicationInfo = &appInfo,
                 .enabledLayerCount = static_cast<uint32_t>(requiredLayers.size()),
                 .ppEnabledLayerNames = requiredLayers.data(),
-                .enabledExtensionCount = glfwRequiredExtensionCount,
-                .ppEnabledExtensionNames = glfwRequiredExtensions
+                .enabledExtensionCount = static_cast<uint32_t>(requiredExtentions.size()),
+                .ppEnabledExtensionNames = requiredExtentions.data()
             };
 
             instance = vk::raii::Instance(context, createInfo);
+
+            std::println("Created instance");
+        }
+
+        void pickPhysicalDevice() {
+            std::vector<vk::raii::PhysicalDevice> devices = instance.enumeratePhysicalDevices();
+
+            if (devices.empty()) {
+                throw std::runtime_error("failed to find GPUs with Vulkan support!");
+            }
+
+            for (const vk::raii::PhysicalDevice& device : devices) {
+                vk::PhysicalDeviceProperties deviceProperties = device.getProperties();
+                vk::PhysicalDeviceFeatures deviceFeatures = device.getFeatures();
+
+                const char* name = deviceProperties.deviceName.data();
+
+                if (deviceProperties.deviceType == vk::PhysicalDeviceType::eDiscreteGpu && deviceFeatures.geometryShader) {
+                    std::println("Using {}", name);
+                    physicalDevice = device;
+                    return;
+                }
+            }
+
+            throw std::runtime_error("failed to find a suitable GPU");
+        }
+
+        std::vector<const char*> getRequiredExtentions() {
+            uint32_t glfwRequiredExtensionCount = 0;
+            const char** glfwRequiredExtensions = glfwGetRequiredInstanceExtensions(&glfwRequiredExtensionCount);
+
+            std::vector<const char*> extensions(glfwRequiredExtensions, glfwRequiredExtensions + glfwRequiredExtensionCount);
+            
+            if (enableValidationLayers) {
+                extensions.push_back(vk::EXTDebugUtilsExtensionName);
+            }
+
+            return extensions;
+        } 
+
+        std::vector<const char*> getRequiredLayers() {
+            std::vector<const char*> layers;
+            if (enableValidationLayers) {
+                layers.assign(validationLayers.begin(), validationLayers.end());
+            }
+
+            return layers;
         }
 
         void ensureLayersSupported(const std::vector<const char*>& requiredLayers) {
@@ -113,21 +172,35 @@ class Pong {
             }
         }
 
-        void ensureExtensionsSupported(const char**& requiredExtentions, const uint32_t& count) {
-            std::vector<vk::ExtensionProperties> extensionProperties = context.enumerateInstanceExtensionProperties();
+        void ensureExtensionsSupported(const std::vector<const char*>& requiredExtensions) {
+            std::vector<vk::ExtensionProperties> supportedExtensionProperties = context.enumerateInstanceExtensionProperties();
 
-            for (uint32_t i = 0; i < count; ++i) {
+            for (const char* requiredExtension : requiredExtensions) {
                 const bool notSupported = std::ranges::none_of( 
-                    extensionProperties, 
-                    [glfwExtension = requiredExtentions[i]](const vk::ExtensionProperties& extensionProperty) {
-                        return strcmp(extensionProperty.extensionName, glfwExtension) == 0;
+                    supportedExtensionProperties, 
+                    [&requiredExtension](const vk::ExtensionProperties& extensionProperty) {
+                        return strcmp(extensionProperty.extensionName, requiredExtension) == 0;
                     }
                 );
 
                 if (notSupported) {
-                    throw std::runtime_error("Required extension not supported: " + std::string(requiredExtentions[i]));
+                    std::string message = std::format("Required extension not supported: {}", requiredExtension);
+                    throw std::runtime_error(message);
                 }
             }
+        }
+
+        void setupDebugMessenger() {
+            if (!enableValidationLayers) return;
+
+            vk::DebugUtilsMessageSeverityFlagsEXT severityFlags( vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError );
+            vk::DebugUtilsMessageTypeFlagsEXT    messageTypeFlags( vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation );
+            vk::DebugUtilsMessengerCreateInfoEXT debugUtilsMessengerCreateInfoEXT{
+                .messageSeverity = severityFlags,
+                .messageType = messageTypeFlags,
+                .pfnUserCallback = &debugCallback
+            };
+            debugMessenger = instance.createDebugUtilsMessengerEXT(debugUtilsMessengerCreateInfoEXT);
         }
 
 };
