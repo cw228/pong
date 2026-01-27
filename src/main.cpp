@@ -60,8 +60,9 @@ class Pong {
         vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;
         vk::raii::PhysicalDevice physicalDevice = nullptr;
         vk::raii::Device device = nullptr;
-
+        vk::PhysicalDeviceFeatures deviceFeatures;
         std::vector<const char*> deviceExtensions = { vk::KHRSwapchainExtensionName };
+        uint32_t graphicsQueueIndex;
 
         void initWindow() {
             glfwInit();
@@ -136,7 +137,7 @@ class Pong {
                 std::println("Using {}", name);
                 physicalDevice = device;
                 return;
-                // vk::PhysicalDeviceProperties deviceProperties = device.getProperties();
+
                 // vk::PhysicalDeviceFeatures deviceFeatures = device.getFeatures();
                 //
                 // const char* name = deviceProperties.deviceName.data();
@@ -152,6 +153,31 @@ class Pong {
         }
 
         void createLogicalDevice() {
+            uint32_t graphicsIndex = findQueueFamilies(physicalDevice);
+            float queuePriority = 0.5f;
+            vk::DeviceQueueCreateInfo deviceQueueCreateInfo {
+                .queueFamilyIndex = graphicsIndex,
+                .queueCount = 1,
+                .pQueuePriorities = &queuePriority,
+            };
+
+            vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan13Features, vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT> featureChain = {
+                {},
+                { .dynamicRendering = true },
+                { .extendedDynamicState = true }
+            };
+
+            vk::DeviceCreateInfo deviceCreateInfo{
+                .pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
+                .queueCreateInfoCount = 1,
+                .pQueueCreateInfos = &deviceQueueCreateInfo,
+                .enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size()),
+                .ppEnabledExtensionNames = deviceExtensions.data()
+            };
+
+            device = vk::raii::Device(physicalDevice, deviceCreateInfo);
+            graphicsQueueIndex = graphicsIndex;
+            // get queue with device.getQueue(graphicsQueueIndex, 0);
         }
 
         std::vector<const char*> getRequiredExtentions() {
