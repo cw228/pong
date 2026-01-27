@@ -27,6 +27,12 @@ constexpr bool enableValidationLayers = false;
 constexpr bool enableValidationLayers = true;
 #endif
 
+#ifdef __APPLE__
+constexpr bool macOS = true;
+#else
+constexpr bool macOS = false;
+#endif
+
 class Pong {
     public:
         void run() {
@@ -104,6 +110,10 @@ class Pong {
                 .ppEnabledExtensionNames = requiredExtentions.data()
             };
 
+            if (macOS) {
+                createInfo.flags = vk::InstanceCreateFlagBits::eEnumeratePortabilityKHR;
+            }
+
             instance = vk::raii::Instance(context, createInfo);
 
             std::println("Created instance");
@@ -140,6 +150,10 @@ class Pong {
             
             if (enableValidationLayers) {
                 extensions.push_back(vk::EXTDebugUtilsExtensionName);
+            }
+
+            if (macOS) {
+                extensions.push_back(vk::KHRPortabilityEnumerationExtensionName);
             }
 
             return extensions;
