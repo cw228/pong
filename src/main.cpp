@@ -59,6 +59,8 @@ class Pong {
         vk::raii::Instance instance = nullptr;
         vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;
         vk::raii::PhysicalDevice physicalDevice = nullptr;
+        vk::raii::Device device = nullptr;
+
         std::vector<const char*> deviceExtensions = { vk::KHRSwapchainExtensionName };
 
         void initWindow() {
@@ -74,6 +76,7 @@ class Pong {
             createInstance();
             setupDebugMessenger();
             pickPhysicalDevice();
+            createLogicalDevice();
         }
 
         void mainLoop() {
@@ -118,6 +121,7 @@ class Pong {
 
             std::println("Created instance");
         }
+        
 
         void pickPhysicalDevice() {
             std::vector<vk::raii::PhysicalDevice> devices = instance.enumeratePhysicalDevices();
@@ -128,18 +132,26 @@ class Pong {
 
             for (const vk::raii::PhysicalDevice& device : devices) {
                 vk::PhysicalDeviceProperties deviceProperties = device.getProperties();
-                vk::PhysicalDeviceFeatures deviceFeatures = device.getFeatures();
-
                 const char* name = deviceProperties.deviceName.data();
-
-                if (deviceProperties.deviceType == vk::PhysicalDeviceType::eDiscreteGpu && deviceFeatures.geometryShader) {
-                    std::println("Using {}", name);
-                    physicalDevice = device;
-                    return;
-                }
+                std::println("Using {}", name);
+                physicalDevice = device;
+                return;
+                // vk::PhysicalDeviceProperties deviceProperties = device.getProperties();
+                // vk::PhysicalDeviceFeatures deviceFeatures = device.getFeatures();
+                //
+                // const char* name = deviceProperties.deviceName.data();
+                //
+                // if (deviceProperties.deviceType == vk::PhysicalDeviceType::eDiscreteGpu && deviceFeatures.geometryShader) {
+                //     std::println("Using {}", name);
+                //     physicalDevice = device;
+                //     return;
+                // }
             }
 
             throw std::runtime_error("failed to find a suitable GPU");
+        }
+
+        void createLogicalDevice() {
         }
 
         std::vector<const char*> getRequiredExtentions() {
@@ -202,6 +214,18 @@ class Pong {
                     throw std::runtime_error(message);
                 }
             }
+        }
+        
+        uint32_t findQueueFamilies(vk::raii::PhysicalDevice physicalDevice) {
+            std::vector<vk::QueueFamilyProperties> queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
+
+            for (uint32_t i = 0; i < queueFamilyProperties.size(); ++i) {
+                if (queueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eGraphics) {
+                    return i;
+                }
+            }
+            
+            throw std::runtime_error("failed to find queue family that supports graphics");
         }
 
         void setupDebugMessenger() {
