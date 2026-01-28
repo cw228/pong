@@ -33,6 +33,11 @@ constexpr bool macOS = true;
 constexpr bool macOS = false;
 #endif
 
+struct QueueFamilyIndices {
+    uint32_t graphicsIndex;
+    uint32_t presentationIndex;
+};
+
 class Pong {
     public:
         void run() {
@@ -59,10 +64,11 @@ class Pong {
         vk::raii::Instance instance = nullptr;
         vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;
         vk::raii::PhysicalDevice physicalDevice = nullptr;
+        vk::raii::SurfaceKHR surface = nullptr;
         vk::raii::Device device = nullptr;
         vk::PhysicalDeviceFeatures deviceFeatures;
         std::vector<const char*> deviceExtensions = { vk::KHRSwapchainExtensionName };
-        uint32_t graphicsQueueIndex;
+        QueueFamilyIndices queueFamilyIndices;
 
         void initWindow() {
             glfwInit();
@@ -76,8 +82,11 @@ class Pong {
         void initVulkan() {
             createInstance();
             setupDebugMessenger();
+            createSurface();
             pickPhysicalDevice();
+            findQueueFamilies();
             createLogicalDevice();
+            createSwapChain();
         }
 
         void mainLoop() {
@@ -122,7 +131,14 @@ class Pong {
 
             std::println("Created instance");
         }
-        
+
+        void createSurface() {
+            VkSurfaceKHR _surface;
+            if (glfwCreateWindowSurface(*instance, window, nullptr, &_surface) != 0) {
+                throw std::runtime_error("failed to create window surface");
+            }
+            surface = vk::raii::SurfaceKHR(instance, _surface);
+        }
 
         void pickPhysicalDevice() {
             std::vector<vk::raii::PhysicalDevice> devices = instance.enumeratePhysicalDevices();
@@ -153,10 +169,9 @@ class Pong {
         }
 
         void createLogicalDevice() {
-            uint32_t graphicsIndex = findQueueFamilies(physicalDevice);
             float queuePriority = 0.5f;
             vk::DeviceQueueCreateInfo deviceQueueCreateInfo {
-                .queueFamilyIndex = graphicsIndex,
+                .queueFamilyIndex = queueFamilyIndices.graphicsIndex,
                 .queueCount = 1,
                 .pQueuePriorities = &queuePriority,
             };
@@ -176,8 +191,51 @@ class Pong {
             };
 
             device = vk::raii::Device(physicalDevice, deviceCreateInfo);
-            graphicsQueueIndex = graphicsIndex;
             // get queue with device.getQueue(graphicsQueueIndex, 0);
+        }
+
+        void createSwapChain() {
+            vk::SurfaceFormatKHR format = chooseSwapSurfaceFormat();
+            vk::PresentModeKHR presentMode = chooseSwapPresentMode();
+            vk::SurfaceCapabilitiesKHR surfaceCapabilities = physicalDevice.getSurfaceCapabilitiesKHR(surface);
+            vk::Extent2D extent = chooseSwapExtent(surfaceCapabilities);
+        }
+
+        vk::SurfaceFormatKHR chooseSwapSurfaceFormat() {
+            std::vector<vk::SurfaceFormatKHR> availableFormats = physicalDevice.getSurfaceFormatsKHR(surface);
+            for (const vk::SurfaceFormatKHR& format : availableFormats) {
+                if (format.format == vk::Format::eB8G8R8A8Srgb && format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
+                    return format;
+                }
+            }
+
+            return availableFormats[0];
+        }
+
+        vk::PresentModeKHR chooseSwapPresentMode() {
+            std::vector<vk::PresentModeKHR> availablePresentModes = physicalDevice.getSurfacePresentModesKHR(surface);
+            for (const vk::PresentModeKHR& presentMode : availablePresentModes) {
+                if (presentMode == vk::PresentModeKHR::eMailbox) {
+                    std::println("Present mode: Mailbox");
+                    return presentMode;
+                }
+            }
+            std::println("Present mode: FIFO");
+            return vk::PresentModeKHR::eFifo;
+        }
+
+        vk::Extent2D chooseSwapExtent(vk::SurfaceCapabilitiesKHR capabilities) {
+            std::println("Swap extent: {} {}", capabilities.currentExtent.width, capabilities.currentExtent.height);
+            if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
+                return capabilities.currentExtent;
+            }
+            int width, height;
+            glfwGetFramebufferSize(window, &width, &height);
+            std::println("Framebuffer size: {} {}", width, height);
+            return {
+                std::clamp<uint32_t>(width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
+                std::clamp<uint32_t>(height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height),
+            };
         }
 
         std::vector<const char*> getRequiredExtentions() {
@@ -242,12 +300,23 @@ class Pong {
             }
         }
         
-        uint32_t findQueueFamilies(vk::raii::PhysicalDevice physicalDevice) {
+        void findQueueFamilies() {
             std::vector<vk::QueueFamilyProperties> queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
+            bool graphicsIndexSet = false;
+            bool presentationIndexSet = false;
 
             for (uint32_t i = 0; i < queueFamilyProperties.size(); ++i) {
                 if (queueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eGraphics) {
-                    return i;
+                    queueFamilyIndices.graphicsIndex = i;
+                    graphicsIndexSet = true;
+                }
+                VkBool32 presentSupport = physicalDevice.getSurfaceSupportKHR(i, *surface);
+                if (presentSupport) {
+                    queueFamilyIndices.presentationIndex = i;
+                    presentationIndexSet = true;
+                }
+                if (graphicsIndexSet && presentationIndexSet) {
+                    return;
                 }
             }
             
