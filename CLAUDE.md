@@ -13,11 +13,10 @@ cmake --build build                        # Build
 
 The project requires `CMAKE_CXX_COMPILER` to be set to clang++ (usually via environment variable).
 
-For clangd support, symlink compile_commands.json to project root:
+**macOS with Homebrew LLVM:** When using Ninja, you must pass `CMAKE_OSX_SYSROOT` explicitly on the command line (environment variable alone doesn't work due to `clang-scan-deps` not receiving it):
 ```bash
-ln -s build/compile_commands.json .
+cmake -B build -G Ninja -DCMAKE_OSX_SYSROOT=$(xcrun --show-sdk-path)
 ```
-
 ## Architecture
 
 Single-file Vulkan application in `src/main.cpp` using:

@@ -245,11 +245,22 @@ class Pong {
         void createImageViews() {
             swapchainImageViews.clear();
 
-            vk::ImageViewCreateInfo ImageViewCreateInfo{
+            vk::ImageViewCreateInfo imageViewCreateInfo{
                 .viewType = vk::ImageViewType::e2D,
                 .format = swapchainImageFormat,
-                .subresourceRange = { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 }
+                .subresourceRange = {
+                    .aspectMask = vk::ImageAspectFlagBits::eColor,
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1
+                }
             };
+
+            for (vk::Image image : swapchainImages) {
+                imageViewCreateInfo.image = image;
+                swapchainImageViews.emplace_back(device, imageViewCreateInfo);
+            }
         }
 
         vk::SurfaceFormatKHR chooseSwapSurfaceFormat() {
