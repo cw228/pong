@@ -73,6 +73,7 @@ class Pong {
         std::vector<vk::Image> swapchainImages;
         vk::Format swapchainImageFormat = vk::Format::eUndefined;
         vk::Extent2D swapchainExtent;
+        std::vector<vk::raii::ImageView> swapchainImageViews;
 
         void initWindow() {
             glfwInit();
@@ -91,6 +92,7 @@ class Pong {
             findQueueFamilies();
             createLogicalDevice();
             createSwapchain();
+            createImageViews();
         }
 
         void mainLoop() {
@@ -238,6 +240,16 @@ class Pong {
             swapchainImages = swapchain.getImages();
             swapchainImageFormat = format.format;
             swapchainExtent = extent;
+        }
+
+        void createImageViews() {
+            swapchainImageViews.clear();
+
+            vk::ImageViewCreateInfo ImageViewCreateInfo{
+                .viewType = vk::ImageViewType::e2D,
+                .format = swapchainImageFormat,
+                .subresourceRange = { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 }
+            };
         }
 
         vk::SurfaceFormatKHR chooseSwapSurfaceFormat() {
