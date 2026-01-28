@@ -69,6 +69,10 @@ class Pong {
         vk::PhysicalDeviceFeatures deviceFeatures;
         std::vector<const char*> deviceExtensions = { vk::KHRSwapchainExtensionName };
         QueueFamilyIndices queueFamilyIndices;
+        vk::raii::SwapchainKHR swapchain = nullptr;
+        std::vector<vk::Image> swapchainImages;
+        vk::Format swapchainImageFormat = vk::Format::eUndefined;
+        vk::Extent2D swapchainExtent;
 
         void initWindow() {
             glfwInit();
@@ -86,7 +90,7 @@ class Pong {
             pickPhysicalDevice();
             findQueueFamilies();
             createLogicalDevice();
-            createSwapChain();
+            createSwapchain();
         }
 
         void mainLoop() {
@@ -194,11 +198,46 @@ class Pong {
             // get queue with device.getQueue(graphicsQueueIndex, 0);
         }
 
-        void createSwapChain() {
+        void createSwapchain() {
             vk::SurfaceFormatKHR format = chooseSwapSurfaceFormat();
             vk::PresentModeKHR presentMode = chooseSwapPresentMode();
             vk::SurfaceCapabilitiesKHR surfaceCapabilities = physicalDevice.getSurfaceCapabilitiesKHR(surface);
             vk::Extent2D extent = chooseSwapExtent(surfaceCapabilities);
+
+            auto minImageCount = std::max(3u, surfaceCapabilities.minImageCount);
+            if (surfaceCapabilities.maxImageCount > 0 && minImageCount > surfaceCapabilities.maxImageCount) {
+                minImageCount = surfaceCapabilities.maxImageCount;
+            }
+
+            vk::SwapchainCreateInfoKHR swapchainCreateInfo{
+                .flags = vk::SwapchainCreateFlagsKHR(),
+                .surface = *surface,
+                .minImageCount = minImageCount,
+                .imageFormat = format.format,
+                .imageColorSpace = format.colorSpace,
+                .imageExtent = extent,
+                .imageArrayLayers = 1,
+                .imageUsage = vk::ImageUsageFlagBits::eColorAttachment,
+                .preTransform = surfaceCapabilities.currentTransform,
+                .compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque,
+                .presentMode = presentMode,
+                .clipped = true,
+                .oldSwapchain = nullptr
+            };
+
+            if (queueFamilyIndices.graphicsIndex != queueFamilyIndices.presentationIndex) {
+                uint32_t queueFamilyIndicesArray[] = { queueFamilyIndices.graphicsIndex, queueFamilyIndices.presentationIndex };
+                swapchainCreateInfo.imageSharingMode = vk::SharingMode::eConcurrent;
+                swapchainCreateInfo.queueFamilyIndexCount = 2;
+                swapchainCreateInfo.pQueueFamilyIndices = queueFamilyIndicesArray;
+            } else {
+                swapchainCreateInfo.imageSharingMode = vk::SharingMode::eExclusive;
+            }
+
+            swapchain = vk::raii::SwapchainKHR(device, swapchainCreateInfo);
+            swapchainImages = swapchain.getImages();
+            swapchainImageFormat = format.format;
+            swapchainExtent = extent;
         }
 
         vk::SurfaceFormatKHR chooseSwapSurfaceFormat() {
