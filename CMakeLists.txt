@@ -29,3 +29,41 @@ target_precompile_headers(pong PRIVATE
     <GLFW/glfw3.h>
 )
 
+# Find slangc compiler (included in Vulkan SDK 1.3.296.0+)
+find_program(slangc_exe slangc HINTS $ENV{VULKAN_SDK}/bin)
+if(NOT slangc_exe)
+    message(FATAL_ERROR "slangc not found. Make sure Vulkan SDK is installed and VULKAN_SDK is set.")
+endif()
+
+# Function to compile slang shaders to SPIR-V
+function(compile_slang_shader source_file entry_point)
+    cmake_path(GET source_file STEM file_stem)
+    set(output_file "${CMAKE_BINARY_DIR}/shaders/${file_stem}_${entry_point}.spv")
+    add_custom_command(
+        OUTPUT ${output_file}
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
+        COMMAND ${slangc_exe}
+            ${source_file}
+            -target spirv
+            -profile spirv_1_4
+            -emit-spirv-directly
+            -fvk-use-entrypoint-name
+            -entry ${entry_point}
+            -o ${output_file}
+        DEPENDS ${source_file}
+        COMMENT "Compiling ${file_stem}.slang (${entry_point})"
+    )
+    set(shader_output ${output_file})
+    return(PROPAGATE shader_output)
+endfunction()
+
+# Compile shaders
+compile_slang_shader(${CMAKE_SOURCE_DIR}/shaders/shader.slang vertMain)
+list(APPEND shader_outputs ${shader_output})
+compile_slang_shader(${CMAKE_SOURCE_DIR}/shaders/shader.slang fragMain)
+list(APPEND shader_outputs ${shader_output})
+
+# Custom target for all shaders
+add_custom_target(shaders DEPENDS ${shader_outputs})
+add_dependencies(pong shaders)
+

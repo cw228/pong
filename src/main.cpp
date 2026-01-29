@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <print>
+#include <fstream>
 
 #ifndef GLFW_INCLUDE_VULKAN
 #define GLFW_INCLUDE_VULKAN
@@ -48,15 +49,6 @@ class Pong {
         }
 
     private:
-        static VKAPI_ATTR vk::Bool32 VKAPI_CALL debugCallback(
-            vk::DebugUtilsMessageSeverityFlagBitsEXT severity, 
-            vk::DebugUtilsMessageTypeFlagsEXT type, 
-            const vk::DebugUtilsMessengerCallbackDataEXT* pCallbackData, 
-            void*
-        ) {
-            std::cerr << to_string(type) << " " << pCallbackData->pMessage << std::endl;
-            return vk::False;
-        }
 
         // mk:members
         GLFWwindow* window;
@@ -93,6 +85,7 @@ class Pong {
             createLogicalDevice();
             createSwapchain();
             createImageViews();
+            createGraphicsPipeline();
         }
 
         void mainLoop() {
@@ -172,6 +165,29 @@ class Pong {
             }
 
             throw std::runtime_error("failed to find a suitable GPU");
+        }
+
+        void findQueueFamilies() {
+            std::vector<vk::QueueFamilyProperties> queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
+            bool graphicsIndexSet = false;
+            bool presentationIndexSet = false;
+
+            for (uint32_t i = 0; i < queueFamilyProperties.size(); ++i) {
+                if (queueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eGraphics) {
+                    queueFamilyIndices.graphicsIndex = i;
+                    graphicsIndexSet = true;
+                }
+                VkBool32 presentSupport = physicalDevice.getSurfaceSupportKHR(i, *surface);
+                if (presentSupport) {
+                    queueFamilyIndices.presentationIndex = i;
+                    presentationIndexSet = true;
+                }
+                if (graphicsIndexSet && presentationIndexSet) {
+                    return;
+                }
+            }
+            
+            throw std::runtime_error("failed to find queue family that supports graphics");
         }
 
         void createLogicalDevice() {
@@ -263,41 +279,26 @@ class Pong {
             }
         }
 
-        vk::SurfaceFormatKHR chooseSwapSurfaceFormat() {
-            std::vector<vk::SurfaceFormatKHR> availableFormats = physicalDevice.getSurfaceFormatsKHR(surface);
-            for (const vk::SurfaceFormatKHR& format : availableFormats) {
-                if (format.format == vk::Format::eB8G8R8A8Srgb && format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
-                    return format;
-                }
-            }
+        void createGraphicsPipeline() {
+            std::vector<char> vertShaderCode = readFile("build/shaders/shader_vertMain.spv");
+            vk::raii::ShaderModule vertShaderModule = createShaderModule(vertShaderCode);
 
-            return availableFormats[0];
-        }
-
-        vk::PresentModeKHR chooseSwapPresentMode() {
-            std::vector<vk::PresentModeKHR> availablePresentModes = physicalDevice.getSurfacePresentModesKHR(surface);
-            for (const vk::PresentModeKHR& presentMode : availablePresentModes) {
-                if (presentMode == vk::PresentModeKHR::eMailbox) {
-                    std::println("Present mode: Mailbox");
-                    return presentMode;
-                }
-            }
-            std::println("Present mode: FIFO");
-            return vk::PresentModeKHR::eFifo;
-        }
-
-        vk::Extent2D chooseSwapExtent(vk::SurfaceCapabilitiesKHR capabilities) {
-            std::println("Swap extent: {} {}", capabilities.currentExtent.width, capabilities.currentExtent.height);
-            if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
-                return capabilities.currentExtent;
-            }
-            int width, height;
-            glfwGetFramebufferSize(window, &width, &height);
-            std::println("Framebuffer size: {} {}", width, height);
-            return {
-                std::clamp<uint32_t>(width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
-                std::clamp<uint32_t>(height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height),
+            std::vector<char> fragShaderCode = readFile("build/shaders/shader_fragMain.spv");
+            vk::raii::ShaderModule fragShaderModule = createShaderModule(fragShaderCode);
+            
+            vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
+                .stage = vk::ShaderStageFlagBits::eVertex,
+                .module = vertShaderModule,
+                .pName = "vertMain"
             };
+
+            vk::PipelineShaderStageCreateInfo fragShaderStageInfo{
+                .stage = vk::ShaderStageFlagBits::eFragment,
+                .module = fragShaderModule,
+                .pName = "fragMain"
+            };
+
+            vk::PipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
         }
 
         std::vector<const char*> getRequiredExtentions() {
@@ -362,27 +363,67 @@ class Pong {
             }
         }
         
-        void findQueueFamilies() {
-            std::vector<vk::QueueFamilyProperties> queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
-            bool graphicsIndexSet = false;
-            bool presentationIndexSet = false;
-
-            for (uint32_t i = 0; i < queueFamilyProperties.size(); ++i) {
-                if (queueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eGraphics) {
-                    queueFamilyIndices.graphicsIndex = i;
-                    graphicsIndexSet = true;
-                }
-                VkBool32 presentSupport = physicalDevice.getSurfaceSupportKHR(i, *surface);
-                if (presentSupport) {
-                    queueFamilyIndices.presentationIndex = i;
-                    presentationIndexSet = true;
-                }
-                if (graphicsIndexSet && presentationIndexSet) {
-                    return;
+        vk::SurfaceFormatKHR chooseSwapSurfaceFormat() {
+            std::vector<vk::SurfaceFormatKHR> availableFormats = physicalDevice.getSurfaceFormatsKHR(surface);
+            for (const vk::SurfaceFormatKHR& format : availableFormats) {
+                if (format.format == vk::Format::eB8G8R8A8Srgb && format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
+                    return format;
                 }
             }
-            
-            throw std::runtime_error("failed to find queue family that supports graphics");
+
+            return availableFormats[0];
+        }
+
+        vk::PresentModeKHR chooseSwapPresentMode() {
+            std::vector<vk::PresentModeKHR> availablePresentModes = physicalDevice.getSurfacePresentModesKHR(surface);
+            for (const vk::PresentModeKHR& presentMode : availablePresentModes) {
+                if (presentMode == vk::PresentModeKHR::eMailbox) {
+                    std::println("Present mode: Mailbox");
+                    return presentMode;
+                }
+            }
+            std::println("Present mode: FIFO");
+            return vk::PresentModeKHR::eFifo;
+        }
+
+        vk::Extent2D chooseSwapExtent(vk::SurfaceCapabilitiesKHR capabilities) {
+            std::println("Swap extent: {} {}", capabilities.currentExtent.width, capabilities.currentExtent.height);
+            if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
+                return capabilities.currentExtent;
+            }
+            int width, height;
+            glfwGetFramebufferSize(window, &width, &height);
+            std::println("Framebuffer size: {} {}", width, height);
+            return {
+                std::clamp<uint32_t>(width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
+                std::clamp<uint32_t>(height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height),
+            };
+        }
+
+        vk::raii::ShaderModule createShaderModule(const std::vector<char>& code) const {
+            vk::ShaderModuleCreateInfo createInfo{
+                .codeSize = code.size(),
+                .pCode = reinterpret_cast<const uint32_t*>(code.data())
+            };
+            vk::raii::ShaderModule shaderModule{ device, createInfo };
+            return shaderModule;
+        }
+
+        static std::vector<char> readFile(const std::string& filename) {
+            std::fstream file(filename, std::ios::ate | std::ios::binary);
+            if (!file.is_open()) {
+                throw std::runtime_error("failed to open file!");
+            }
+            std::vector<char> buffer(file.tellg());
+            file.seekg(0, std::ios::beg);
+            file.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+            file.close();
+            return buffer;
+        }
+
+        static VKAPI_ATTR vk::Bool32 VKAPI_CALL debugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT severity, vk::DebugUtilsMessageTypeFlagsEXT type, const vk::DebugUtilsMessengerCallbackDataEXT* pCallbackData, void*) {
+            std::cerr << to_string(type) << " " << pCallbackData->pMessage << std::endl;
+            return vk::False;
         }
 
         void setupDebugMessenger() {
