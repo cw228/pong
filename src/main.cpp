@@ -299,6 +299,47 @@ class Pong {
             };
 
             vk::PipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
+
+            vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
+
+            vk::PipelineInputAssemblyStateCreateInfo inputAssembly{
+                .topology = vk::PrimitiveTopology::eTriangleList
+            };
+
+            vk::Viewport viewport{
+                .x = 0.0f,
+                .y = 0.0f,
+                .width = static_cast<float>(swapchainExtent.width),
+                .height = static_cast<float>(swapchainExtent.height),
+                .minDepth = 0.0f,
+                .maxDepth = 1.0f
+            };
+
+            vk::Rect2D scissor{
+                .offset = vk::Offset2D{ 0, 0 },
+                .extent = swapchainExtent
+            };
+
+            std::vector<vk::DynamicState> dynamicStates = {
+                vk::DynamicState::eViewport,
+                vk::DynamicState::eScissor
+            };
+
+            vk::PipelineDynamicStateCreateInfo dynamicState{
+                .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
+                .pDynamicStates = dynamicStates.data()
+            };
+
+            vk::PipelineRasterizationStateCreateInfo rasterizer{
+                .depthClampEnable = vk::False,
+                .rasterizerDiscardEnable = vk::False,
+                .polygonMode = vk::PolygonMode::eFill,
+                .cullMode = vk::CullModeFlagBits::eBack,
+                .frontFace = vk::FrontFace::eClockwise,
+                .depthBiasEnable = vk::False,
+                .depthBiasSlopeFactor = 1.0f,
+                .lineWidth = 1.0f
+            };
         }
 
         std::vector<const char*> getRequiredExtentions() {
@@ -410,7 +451,7 @@ class Pong {
         }
 
         static std::vector<char> readFile(const std::string& filename) {
-            std::fstream file(filename, std::ios::ate | std::ios::binary);
+            std::ifstream file(filename, std::ios::ate | std::ios::binary);
             if (!file.is_open()) {
                 throw std::runtime_error("failed to open file!");
             }
