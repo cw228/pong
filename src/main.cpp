@@ -245,8 +245,6 @@ class Pong {
             }
 
             instance = vk::raii::Instance(context, createInfo);
-
-            std::println("Created instance");
         }
 
         void createSurface() {
@@ -267,7 +265,6 @@ class Pong {
             for (const vk::raii::PhysicalDevice& device : devices) {
                 vk::PhysicalDeviceProperties deviceProperties = device.getProperties();
                 const char* name = deviceProperties.deviceName.data();
-                std::println("Using {}", name);
                 physicalDevice = device;
                 return;
 
@@ -647,22 +644,19 @@ class Pong {
             std::vector<vk::PresentModeKHR> availablePresentModes = physicalDevice.getSurfacePresentModesKHR(surface);
             for (const vk::PresentModeKHR& presentMode : availablePresentModes) {
                 if (presentMode == vk::PresentModeKHR::eMailbox) {
-                    std::println("Present mode: Mailbox");
                     return presentMode;
                 }
             }
-            std::println("Present mode: FIFO");
-            return vk::PresentModeKHR::eFifo;
+            // return vk::PresentModeKHR::eFifo;
+            return vk::PresentModeKHR::eImmediate;
         }
 
         vk::Extent2D chooseSwapExtent(vk::SurfaceCapabilitiesKHR capabilities) {
-            std::println("Swap extent: {} {}", capabilities.currentExtent.width, capabilities.currentExtent.height);
             if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
                 return capabilities.currentExtent;
             }
             int width, height;
             glfwGetFramebufferSize(window, &width, &height);
-            std::println("Framebuffer size: {} {}", width, height);
             return {
                 std::clamp<uint32_t>(width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
                 std::clamp<uint32_t>(height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height),
