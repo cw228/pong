@@ -17,6 +17,7 @@ The project requires `CMAKE_CXX_COMPILER` to be set to clang++ (usually via envi
 ```bash
 cmake -B build -G Ninja -DCMAKE_OSX_SYSROOT=$(xcrun --show-sdk-path)
 ```
+
 ## Architecture
 
 Single-file Vulkan application in `src/main.cpp` using:
@@ -33,3 +34,11 @@ The `Pong` class encapsulates all Vulkan setup with initialization flow:
 - `GLFW_INCLUDE_VULKAN` - GLFW includes Vulkan headers
 - Validation layers enabled in debug builds (`#ifndef NDEBUG`)
 - Precompiled headers for `vulkan_raii.hpp` and `GLFW/glfw3.h` to reduce compile times
+- `VK_KHR_portability_subset` device extension required on macOS (MoltenVK)
+
+## Troubleshooting
+
+**Stale precompiled header after system update:** If you see an error about a header being modified since the PCH was built, delete the PCH and rebuild:
+```bash
+rm -f build/CMakeFiles/pong.dir/cmake_pch.hxx.pch && cmake --build build
+```

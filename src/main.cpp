@@ -59,7 +59,12 @@ class Pong {
         vk::raii::SurfaceKHR surface = nullptr;
         vk::raii::Device device = nullptr;
         vk::PhysicalDeviceFeatures deviceFeatures;
-        std::vector<const char*> deviceExtensions = { vk::KHRSwapchainExtensionName };
+        std::vector<const char*> deviceExtensions = {
+            vk::KHRSwapchainExtensionName,
+#ifdef __APPLE__
+            "VK_KHR_portability_subset",
+#endif
+        };
         QueueFamilyIndices queueFamilyIndices;
         vk::raii::SwapchainKHR swapchain = nullptr;
         std::vector<vk::Image> swapchainImages;
