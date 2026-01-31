@@ -49,7 +49,6 @@ class Pong {
         }
 
     private:
-
         // mk:members
         GLFWwindow* window;
         vk::raii::Context context;
@@ -71,6 +70,13 @@ class Pong {
         vk::Format swapchainImageFormat = vk::Format::eUndefined;
         vk::Extent2D swapchainExtent;
         std::vector<vk::raii::ImageView> swapchainImageViews;
+        vk::raii::PipelineLayout pipelineLayout = nullptr;
+        vk::raii::Pipeline graphicsPipeline = nullptr;
+        vk::raii::CommandPool commandPool = nullptr;
+        vk::raii::CommandBuffer commandBuffer = nullptr;
+        vk::raii::Semaphore presentCompleteSemaphore = nullptr;
+        vk::raii::Semaphore renderFinishedSemaphore = nullptr;
+        vk::raii::Fence drawFence = nullptr;
 
         void initWindow() {
             glfwInit();
@@ -91,12 +97,99 @@ class Pong {
             createSwapchain();
             createImageViews();
             createGraphicsPipeline();
+            createCommandPool();
+            createCommandBuffer();
+            createSyncObjects();
         }
 
         void mainLoop() {
             while (!glfwWindowShouldClose(window)) {
                 glfwPollEvents();
+                drawFrame();
             }
+        }
+
+        void drawFrame() {
+            vk::Result fenceResult = device.waitForFences(*drawFence, vk::True, UINT64_MAX);
+            auto [result, imageIndex] = swapchain.acquireNextImage(UINT64_MAX, *presentCompleteSemaphore, nullptr);
+            recordCommandBuffer(imageIndex);
+            device.resetFences(*drawFence);
+
+            vk::PipelineStageFlags waitDestinationStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput);
+            const vk::SubmitInfo submitInfo{
+                .waitSemaphoreCount = 1,
+                .pWaitSemaphores = &*presentCompleteSemaphore,
+                .pWaitDstStageMask = &waitDestinationStageMask,
+                .commandBufferCount = 1,
+                .pCommandBuffers = &*commandBuffer,
+                .signalSemaphoreCount = 1,
+                .pSignalSemaphores = &*renderFinishedSemaphore
+            };
+        }
+
+        void recordCommandBuffer(uint32_t imageIndex) {
+            commandBuffer.begin({});
+
+            transitionImageLayout(
+                imageIndex,
+                vk::ImageLayout::eUndefined,
+                vk::ImageLayout::eColorAttachmentOptimal,
+                {},
+                vk::AccessFlagBits2::eColorAttachmentWrite,
+                vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                vk::PipelineStageFlagBits2::eColorAttachmentOutput
+            );
+
+            vk::ClearValue clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
+
+            vk::RenderingAttachmentInfo attachmentInfo = {
+                .imageView = swapchainImageViews[imageIndex],
+                .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+                .loadOp = vk::AttachmentLoadOp::eClear,
+                .storeOp = vk::AttachmentStoreOp::eStore,
+                .clearValue = clearColor
+            };
+
+            vk::RenderingInfo renderingInfo = {
+                .renderArea = { .offset = { 0, 0 }, .extent = swapchainExtent },
+                .layerCount = 1,
+                .colorAttachmentCount = 1,
+                .pColorAttachments = &attachmentInfo
+            };
+
+            commandBuffer.beginRendering(renderingInfo);
+            commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
+
+            vk::Viewport viewport{
+                .x = 0.0f,
+                .y = 0.0f,
+                .width = static_cast<float>(swapchainExtent.width),
+                .height = static_cast<float>(swapchainExtent.height),
+                .minDepth = 0.0f,
+                .maxDepth = 1.0f
+            };
+
+            vk::Rect2D scissor{
+                .offset = vk::Offset2D{ 0, 0 },
+                .extent = swapchainExtent
+            };
+
+            commandBuffer.setViewport(0, viewport);
+            commandBuffer.setScissor(0, scissor);
+            commandBuffer.draw(3, 1, 0, 0);
+            commandBuffer.endRendering();
+
+            transitionImageLayout(
+                imageIndex,
+                vk::ImageLayout::eColorAttachmentOptimal,
+                vk::ImageLayout::ePresentSrcKHR,
+                vk::AccessFlagBits2::eColorAttachmentWrite,
+                {},
+                vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                vk::PipelineStageFlagBits2::eBottomOfPipe
+            );
+
+            commandBuffer.end();
         }
 
         void cleanup() {
@@ -104,6 +197,7 @@ class Pong {
             glfwTerminate();
         }
 
+        // Vulkan initialization
         void createInstance() {
             constexpr vk::ApplicationInfo appInfo{ 
                 .pApplicationName = "Pong",
@@ -203,8 +297,14 @@ class Pong {
                 .pQueuePriorities = &queuePriority,
             };
 
-            vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan13Features, vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT> featureChain = {
+            vk::StructureChain<
+                vk::PhysicalDeviceFeatures2, 
+                vk::PhysicalDeviceVulkan11Features, 
+                vk::PhysicalDeviceVulkan13Features, 
+                vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
+            > featureChain = {
                 {},
+                { .shaderDrawParameters = true },
                 { .dynamicRendering = true },
                 { .extendedDynamicState = true }
             };
@@ -311,23 +411,14 @@ class Pong {
                 .topology = vk::PrimitiveTopology::eTriangleList
             };
 
-            vk::Viewport viewport{
-                .x = 0.0f,
-                .y = 0.0f,
-                .width = static_cast<float>(swapchainExtent.width),
-                .height = static_cast<float>(swapchainExtent.height),
-                .minDepth = 0.0f,
-                .maxDepth = 1.0f
-            };
-
-            vk::Rect2D scissor{
-                .offset = vk::Offset2D{ 0, 0 },
-                .extent = swapchainExtent
-            };
-
             std::vector<vk::DynamicState> dynamicStates = {
                 vk::DynamicState::eViewport,
                 vk::DynamicState::eScissor
+            };
+
+            vk::PipelineViewportStateCreateInfo viewportState{
+                .viewportCount = 1,
+                .scissorCount = 1
             };
 
             vk::PipelineDynamicStateCreateInfo dynamicState{
@@ -345,6 +436,115 @@ class Pong {
                 .depthBiasSlopeFactor = 1.0f,
                 .lineWidth = 1.0f
             };
+
+            vk::PipelineMultisampleStateCreateInfo multisampling{
+                .rasterizationSamples = vk::SampleCountFlagBits::e1,
+                .sampleShadingEnable = vk::False
+            };
+
+            vk::PipelineColorBlendAttachmentState colorBlendAttachment{
+                .blendEnable = vk::False,
+                .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
+            };
+
+            vk::PipelineColorBlendStateCreateInfo colorBlending{
+                .logicOpEnable = vk::False,
+                .logicOp = vk::LogicOp::eCopy,
+                .attachmentCount = 1,
+                .pAttachments = &colorBlendAttachment
+            };
+
+            vk::PipelineLayoutCreateInfo pipelineLayoutInfo{
+                .setLayoutCount = 0,
+                .pushConstantRangeCount = 0
+            };
+
+            pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutInfo);
+
+            vk::PipelineRenderingCreateInfo pipelineRenderingCreateInfo{
+                .colorAttachmentCount = 1,
+                .pColorAttachmentFormats = &swapchainImageFormat,
+            };
+
+            vk::GraphicsPipelineCreateInfo pipelineInfo{
+                .pNext = &pipelineRenderingCreateInfo,
+                .stageCount = 2,
+                .pStages = shaderStages,
+                .pVertexInputState = &vertexInputInfo,
+                .pInputAssemblyState = &inputAssembly,
+                .pViewportState = &viewportState,
+                .pRasterizationState = &rasterizer,
+                .pMultisampleState = &multisampling,
+                .pColorBlendState = &colorBlending,
+                .pDynamicState = &dynamicState,
+                .layout = pipelineLayout,
+                .renderPass = nullptr
+            };
+
+            graphicsPipeline = vk::raii::Pipeline(device, nullptr, pipelineInfo);
+        }
+
+        void createCommandPool() {
+            vk::CommandPoolCreateInfo poolInfo{
+                .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+                .queueFamilyIndex = queueFamilyIndices.graphicsIndex
+            };
+
+            commandPool = vk::raii::CommandPool(device, poolInfo);
+        }
+
+        void createCommandBuffer() {
+            vk::CommandBufferAllocateInfo allocInfo{
+                .commandPool = commandPool,
+                .level = vk::CommandBufferLevel::ePrimary,
+                .commandBufferCount = 1
+            };
+
+            commandBuffer = std::move(vk::raii::CommandBuffers(device, allocInfo).front());
+        }
+
+        void createSyncObjects() {
+            presentCompleteSemaphore = vk::raii::Semaphore(device, vk::SemaphoreCreateInfo());
+            renderFinishedSemaphore = vk::raii::Semaphore(device, vk::SemaphoreCreateInfo());
+            drawFence = vk::raii::Fence(device, { .flags = vk::FenceCreateFlagBits::eSignaled });
+        }
+
+        // Helper functions
+        void transitionImageLayout(
+            uint32_t imageIndex,
+            vk::ImageLayout oldLayout,
+            vk::ImageLayout newLayout,
+            vk::AccessFlags2 srcAccessMask,
+            vk::AccessFlags2 dstAccessMask,
+            vk::PipelineStageFlags2 srcStageMask,
+            vk::PipelineStageFlags2 dstStageMask
+        ) { 
+            vk::ImageMemoryBarrier2 barrier = {
+                .srcStageMask = srcStageMask,
+                .srcAccessMask = srcAccessMask,
+                .dstStageMask = dstStageMask,
+                .dstAccessMask = dstAccessMask,
+                .oldLayout = oldLayout,
+                .newLayout = newLayout,
+                .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+                .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+                .image = swapchainImages[imageIndex],
+                .subresourceRange = {
+                    .aspectMask = vk::ImageAspectFlagBits::eColor,
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1
+                }
+            };
+
+            vk::DependencyInfo dependencyInfo = {
+                .dependencyFlags = {},
+                .imageMemoryBarrierCount = 1,
+                .pImageMemoryBarriers = &barrier
+            };
+
+            commandBuffer.pipelineBarrier2(dependencyInfo);
         }
 
         std::vector<const char*> getRequiredExtentions() {
@@ -475,8 +675,8 @@ class Pong {
         void setupDebugMessenger() {
             if (!enableValidationLayers) return;
 
-            vk::DebugUtilsMessageSeverityFlagsEXT severityFlags( vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError );
-            vk::DebugUtilsMessageTypeFlagsEXT    messageTypeFlags( vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation );
+            vk::DebugUtilsMessageSeverityFlagsEXT severityFlags( vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError );
+            vk::DebugUtilsMessageTypeFlagsEXT messageTypeFlags( vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation );
             vk::DebugUtilsMessengerCreateInfoEXT debugUtilsMessengerCreateInfoEXT{
                 .messageSeverity = severityFlags,
                 .messageType = messageTypeFlags,
