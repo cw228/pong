@@ -57,11 +57,15 @@ class Pong {
         vk::raii::PhysicalDevice physicalDevice = nullptr;
         vk::raii::SurfaceKHR surface = nullptr;
         vk::raii::Device device = nullptr;
+        vk::raii::Queue graphicsQueue = nullptr;
+        vk::raii::Queue presentQueue = nullptr;
         vk::PhysicalDeviceFeatures deviceFeatures;
         std::vector<const char*> deviceExtensions = {
             vk::KHRSwapchainExtensionName,
 #ifdef __APPLE__
             "VK_KHR_portability_subset",
+            vk::KHRSynchronization2ExtensionName,
+            vk::KHRDynamicRenderingExtensionName,
 #endif
         };
         QueueFamilyIndices queueFamilyIndices;
@@ -94,6 +98,7 @@ class Pong {
             pickPhysicalDevice();
             findQueueFamilies();
             createLogicalDevice();
+            getQueues();
             createSwapchain();
             createImageViews();
             createGraphicsPipeline();
@@ -107,11 +112,13 @@ class Pong {
                 glfwPollEvents();
                 drawFrame();
             }
+
+            device.waitIdle();
         }
 
         void drawFrame() {
             vk::Result fenceResult = device.waitForFences(*drawFence, vk::True, UINT64_MAX);
-            auto [result, imageIndex] = swapchain.acquireNextImage(UINT64_MAX, *presentCompleteSemaphore, nullptr);
+            auto [aquireResult, imageIndex] = swapchain.acquireNextImage(UINT64_MAX, *presentCompleteSemaphore, nullptr);
             recordCommandBuffer(imageIndex);
             device.resetFences(*drawFence);
 
@@ -125,6 +132,18 @@ class Pong {
                 .signalSemaphoreCount = 1,
                 .pSignalSemaphores = &*renderFinishedSemaphore
             };
+
+            graphicsQueue.submit(submitInfo, *drawFence);
+
+            const vk::PresentInfoKHR presentInfo{
+                .waitSemaphoreCount = 1,
+                .pWaitSemaphores = &*renderFinishedSemaphore,
+                .swapchainCount = 1,
+                .pSwapchains = &*swapchain,
+                .pImageIndices = &imageIndex
+            };
+
+            vk::Result presentResult = presentQueue.presentKHR(presentInfo);
         }
 
         void recordCommandBuffer(uint32_t imageIndex) {
@@ -305,7 +324,7 @@ class Pong {
             > featureChain = {
                 {},
                 { .shaderDrawParameters = true },
-                { .dynamicRendering = true },
+                { .synchronization2 = true, .dynamicRendering = true },
                 { .extendedDynamicState = true }
             };
 
@@ -318,7 +337,11 @@ class Pong {
             };
 
             device = vk::raii::Device(physicalDevice, deviceCreateInfo);
-            // get queue with device.getQueue(graphicsQueueIndex, 0);
+        }
+
+        void getQueues() {
+            graphicsQueue = device.getQueue(queueFamilyIndices.graphicsIndex, 0);
+            presentQueue = device.getQueue(queueFamilyIndices.presentationIndex, 0);
         }
 
         void createSwapchain() {
