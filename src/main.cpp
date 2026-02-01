@@ -17,6 +17,7 @@
 
 constexpr uint32_t WIDTH = 800;
 constexpr uint32_t HEIGHT = 600;
+constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 
 const std::vector<const char*> validationLayers = {
     "VK_LAYER_KHRONOS_validation"
@@ -77,10 +78,11 @@ class Pong {
         vk::raii::PipelineLayout pipelineLayout = nullptr;
         vk::raii::Pipeline graphicsPipeline = nullptr;
         vk::raii::CommandPool commandPool = nullptr;
-        vk::raii::CommandBuffer commandBuffer = nullptr;
-        vk::raii::Semaphore presentCompleteSemaphore = nullptr;
-        vk::raii::Semaphore renderFinishedSemaphore = nullptr;
-        vk::raii::Fence drawFence = nullptr;
+
+        std::vector<vk::raii::CommandBuffer> commandBuffers;
+        std::vector<vk::raii::Semaphore> presentCompleteSemaphores;
+        std::vector<vk::raii::Semaphore> renderFinishedSemaphores;
+        std::vector<vk::raii::Fence> drawFences;
 
         void initWindow() {
             glfwInit();
@@ -103,7 +105,7 @@ class Pong {
             createImageViews();
             createGraphicsPipeline();
             createCommandPool();
-            createCommandBuffer();
+            createCommandBuffers();
             createSyncObjects();
         }
 
@@ -117,7 +119,9 @@ class Pong {
         }
 
         void drawFrame() {
+            // TODO: remove after we implement multiple frames in flight
             device.waitIdle();
+
             vk::Result fenceResult = device.waitForFences(*drawFence, vk::True, UINT64_MAX);
             auto [aquireResult, imageIndex] = swapchain.acquireNextImage(UINT64_MAX, *presentCompleteSemaphore, nullptr);
             recordCommandBuffer(imageIndex);
@@ -513,14 +517,14 @@ class Pong {
             commandPool = vk::raii::CommandPool(device, poolInfo);
         }
 
-        void createCommandBuffer() {
+        void createCommandBuffers() {
             vk::CommandBufferAllocateInfo allocInfo{
                 .commandPool = commandPool,
                 .level = vk::CommandBufferLevel::ePrimary,
-                .commandBufferCount = 1
+                .commandBufferCount = MAX_FRAMES_IN_FLIGHT
             };
 
-            commandBuffer = std::move(vk::raii::CommandBuffers(device, allocInfo).front());
+            commandBuffers = vk::raii::CommandBuffers(device, allocInfo);
         }
 
         void createSyncObjects() {
