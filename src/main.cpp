@@ -83,7 +83,8 @@ class Pong {
         std::vector<vk::raii::Semaphore> presentCompleteSemaphores;
         std::vector<vk::raii::Semaphore> renderFinishedSemaphores;
         std::vector<vk::raii::Fence> drawFences;
-
+        uint32_t frameIndex = 0;
+        
         void initWindow() {
             glfwInit();
 
@@ -119,39 +120,68 @@ class Pong {
         }
 
         void drawFrame() {
-            // TODO: remove after we implement multiple frames in flight
-            device.waitIdle();
+            vk::Result fenceResult = device.waitForFences(*drawFences[frameIndex], vk::True, UINT64_MAX);
 
-            vk::Result fenceResult = device.waitForFences(*drawFence, vk::True, UINT64_MAX);
-            auto [aquireResult, imageIndex] = swapchain.acquireNextImage(UINT64_MAX, *presentCompleteSemaphore, nullptr);
+            if (fenceResult != vk::Result::eSuccess) {
+                throw std::runtime_error("failed to wait for fence");
+            }
+
+            // int width, height;
+            // glfwGetFramebufferSize(window, &width, &height);
+            // vk::SurfaceCapabilitiesKHR surfaceCapabilities = physicalDevice.getSurfaceCapabilitiesKHR(surface);
+            // vk::Extent2D currentExtent = clampedExtent(surfaceCapabilities, width, height);
+            //
+            // if (currentExtent.width != swapchainExtent.width || currentExtent.height != swapchainExtent.height) {
+            //     std::println("Extent changed {}x{} -> {}x{}", swapchainExtent.width, swapchainExtent.height, width, height);
+            //     recreateSwapchain();
+            // }
+
+            auto [acquireResult, imageIndex] = swapchain.acquireNextImage(UINT64_MAX, *presentCompleteSemaphores[frameIndex], nullptr);
+
+            if (acquireResult == vk::Result::eErrorOutOfDateKHR) {
+                std::println("swapchain out of date!");
+            }
+
+            if (acquireResult == vk::Result::eSuboptimalKHR) {
+                std::println("swapchain suboptimal!");
+            }
+
+            if (acquireResult != vk::Result::eSuccess) {
+                throw std::runtime_error("failed to acquire swapchain image");
+            }
+
             recordCommandBuffer(imageIndex);
-            device.resetFences(*drawFence);
+            device.resetFences(*drawFences[frameIndex]);
 
             vk::PipelineStageFlags waitDestinationStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput);
             const vk::SubmitInfo submitInfo{
                 .waitSemaphoreCount = 1,
-                .pWaitSemaphores = &*presentCompleteSemaphore,
+                .pWaitSemaphores = &*presentCompleteSemaphores[frameIndex],
                 .pWaitDstStageMask = &waitDestinationStageMask,
                 .commandBufferCount = 1,
-                .pCommandBuffers = &*commandBuffer,
+                .pCommandBuffers = &*commandBuffers[frameIndex],
                 .signalSemaphoreCount = 1,
-                .pSignalSemaphores = &*renderFinishedSemaphore
+                .pSignalSemaphores = &*renderFinishedSemaphores[imageIndex]
             };
 
-            graphicsQueue.submit(submitInfo, *drawFence);
+            graphicsQueue.submit(submitInfo, *drawFences[frameIndex]);
 
             const vk::PresentInfoKHR presentInfo{
                 .waitSemaphoreCount = 1,
-                .pWaitSemaphores = &*renderFinishedSemaphore,
+                .pWaitSemaphores = &*renderFinishedSemaphores[imageIndex],
                 .swapchainCount = 1,
                 .pSwapchains = &*swapchain,
                 .pImageIndices = &imageIndex
             };
 
             vk::Result presentResult = presentQueue.presentKHR(presentInfo);
+
+            frameIndex = (frameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
         }
 
         void recordCommandBuffer(uint32_t imageIndex) {
+            vk::raii::CommandBuffer& commandBuffer = commandBuffers[frameIndex];
+
             commandBuffer.begin({});
 
             transitionImageLayout(
@@ -387,6 +417,20 @@ class Pong {
             swapchainExtent = extent;
         }
 
+        void recreateSwapchain() {
+            device.waitIdle();
+
+            cleanupSwapchain();
+
+            createSwapchain();
+            createImageViews();
+        }
+
+        void cleanupSwapchain() {
+            swapchainImageViews.clear();
+            swapchain = nullptr;
+        }
+
         void createImageViews() {
             swapchainImageViews.clear();
 
@@ -528,9 +572,16 @@ class Pong {
         }
 
         void createSyncObjects() {
-            presentCompleteSemaphore = vk::raii::Semaphore(device, vk::SemaphoreCreateInfo());
-            renderFinishedSemaphore = vk::raii::Semaphore(device, vk::SemaphoreCreateInfo());
-            drawFence = vk::raii::Fence(device, { .flags = vk::FenceCreateFlagBits::eSignaled });
+            assert(renderFinishedSemaphores.empty() && presentCompleteSemaphores.empty() && drawFences.empty());
+
+            for (size_t i = 0; i < swapchainImages.size(); i++) {
+                renderFinishedSemaphores.emplace_back(device, vk::SemaphoreCreateInfo());
+            }
+
+            for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+                presentCompleteSemaphores.emplace_back(device, vk::SemaphoreCreateInfo());
+                drawFences.emplace_back(device, vk::FenceCreateInfo{ .flags = vk::FenceCreateFlagBits::eSignaled });
+            }
         }
 
         // Helper functions
@@ -568,7 +619,7 @@ class Pong {
                 .pImageMemoryBarriers = &barrier
             };
 
-            commandBuffer.pipelineBarrier2(dependencyInfo);
+            commandBuffers[frameIndex].pipelineBarrier2(dependencyInfo);
         }
 
         std::vector<const char*> getRequiredExtentions() {
@@ -661,6 +712,10 @@ class Pong {
             }
             int width, height;
             glfwGetFramebufferSize(window, &width, &height);
+            return clampedExtent(capabilities, width, height);
+        }
+
+        vk::Extent2D clampedExtent(vk::SurfaceCapabilitiesKHR& capabilities, int& width, int& height) {
             return {
                 std::clamp<uint32_t>(width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
                 std::clamp<uint32_t>(height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height),
