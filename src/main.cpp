@@ -86,7 +86,7 @@ class Pong {
             glfwInit();
 
             glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-            glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+            // glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
             window = glfwCreateWindow(WIDTH, HEIGHT, "Pong", nullptr, nullptr);
         }
@@ -117,6 +117,7 @@ class Pong {
         }
 
         void drawFrame() {
+            device.waitIdle();
             vk::Result fenceResult = device.waitForFences(*drawFence, vk::True, UINT64_MAX);
             auto [aquireResult, imageIndex] = swapchain.acquireNextImage(UINT64_MAX, *presentCompleteSemaphore, nullptr);
             recordCommandBuffer(imageIndex);
@@ -213,7 +214,6 @@ class Pong {
 
         void cleanup() {
             glfwDestroyWindow(window);
-            glfwTerminate();
         }
 
         // Vulkan initialization
@@ -647,8 +647,8 @@ class Pong {
                     return presentMode;
                 }
             }
-            // return vk::PresentModeKHR::eFifo;
-            return vk::PresentModeKHR::eImmediate;
+
+            return vk::PresentModeKHR::eFifo;
         }
 
         vk::Extent2D chooseSwapExtent(vk::SurfaceCapabilitiesKHR capabilities) {
@@ -705,14 +705,18 @@ class Pong {
 };
 
 int main() {
-    Pong pong;
+    {
+        Pong pong;
 
-    try {
-        pong.run();
-    } catch (const std::exception& e) {
-        std::cerr << e.what() << std::endl;
-        return EXIT_FAILURE;
+        try {
+            pong.run();
+        } catch (const std::exception& e) {
+            std::cerr << e.what() << std::endl;
+            return EXIT_FAILURE;
+        }
     }
+
+    glfwTerminate();
 
     return EXIT_SUCCESS;
 }
