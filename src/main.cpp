@@ -120,39 +120,28 @@ class Pong {
         }
 
         void drawFrame() {
+            // Block if 2 command buffers are being executed
             vk::Result fenceResult = device.waitForFences(*drawFences[frameIndex], vk::True, UINT64_MAX);
 
             if (fenceResult != vk::Result::eSuccess) {
                 throw std::runtime_error("failed to wait for fence");
             }
 
-            // int width, height;
-            // glfwGetFramebufferSize(window, &width, &height);
-            // vk::SurfaceCapabilitiesKHR surfaceCapabilities = physicalDevice.getSurfaceCapabilitiesKHR(surface);
-            // vk::Extent2D currentExtent = clampedExtent(surfaceCapabilities, width, height);
-            //
-            // if (currentExtent.width != swapchainExtent.width || currentExtent.height != swapchainExtent.height) {
-            //     std::println("Extent changed {}x{} -> {}x{}", swapchainExtent.width, swapchainExtent.height, width, height);
-            //     recreateSwapchain();
-            // }
-
+            // If we have less than 2 command buffers executing, request an image. 
+            // Signal when that image is done presenting (separate op than command execution)
             auto [acquireResult, imageIndex] = swapchain.acquireNextImage(UINT64_MAX, *presentCompleteSemaphores[frameIndex], nullptr);
 
-            if (acquireResult == vk::Result::eErrorOutOfDateKHR) {
-                std::println("swapchain out of date!");
-            }
-
-            if (acquireResult == vk::Result::eSuboptimalKHR) {
-                std::println("swapchain suboptimal!");
-            }
-
-            if (acquireResult != vk::Result::eSuccess) {
-                throw std::runtime_error("failed to acquire swapchain image");
+            if (acquireResult == vk::Result::eErrorOutOfDateKHR || acquireResult == vk::Result::eSuboptimalKHR) {
+                recreateSwapchain();
+                return;
             }
 
             recordCommandBuffer(imageIndex);
+
             device.resetFences(*drawFences[frameIndex]);
 
+            // Execute a command buffer when image is done presenting
+            // Signal renderFinished when the command buffer is finished executing
             vk::PipelineStageFlags waitDestinationStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput);
             const vk::SubmitInfo submitInfo{
                 .waitSemaphoreCount = 1,
@@ -164,8 +153,10 @@ class Pong {
                 .pSignalSemaphores = &*renderFinishedSemaphores[imageIndex]
             };
 
+            // We will have max 2 command buffers executing concurrently 
             graphicsQueue.submit(submitInfo, *drawFences[frameIndex]);
 
+            // wait on renderFinished to present
             const vk::PresentInfoKHR presentInfo{
                 .waitSemaphoreCount = 1,
                 .pWaitSemaphores = &*renderFinishedSemaphores[imageIndex],
@@ -424,10 +415,14 @@ class Pong {
 
             createSwapchain();
             createImageViews();
+            createSyncObjects();
         }
 
         void cleanupSwapchain() {
             swapchainImageViews.clear();
+            presentCompleteSemaphores.clear();
+            renderFinishedSemaphores.clear();
+            drawFences.clear();
             swapchain = nullptr;
         }
 

@@ -35,6 +35,7 @@ The `Pong` class encapsulates all Vulkan setup with initialization flow:
 - Validation layers enabled in debug builds (`#ifndef NDEBUG`)
 - Precompiled headers for `vulkan_raii.hpp` and `GLFW/glfw3.h` to reduce compile times
 - `VK_KHR_portability_subset` device extension required on macOS (MoltenVK)
+- MoltenVK is Vulkan 1.2, so Vulkan 1.3 features need their extensions explicitly enabled on macOS (e.g., `VK_KHR_synchronization2`, `VK_KHR_dynamic_rendering`)
 
 ## Troubleshooting
 
