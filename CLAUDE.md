@@ -26,7 +26,30 @@ Single-file Vulkan application in `src/main.cpp` using:
 - **GLFW** for window management and Vulkan surface creation
 
 The `Pong` class encapsulates all Vulkan setup with initialization flow:
-`initWindow()` → `createInstance()` → `setupDebugMessenger()` → `createSurface()` → `pickPhysicalDevice()` → `findQueueFamilies()` → `createLogicalDevice()` → `createSwapchain()` → `createImageViews()`
+`initWindow()` → `createInstance()` → `setupDebugMessenger()` → `createSurface()` → `pickPhysicalDevice()` → `findQueueFamilies()` → `createLogicalDevice()` → `getQueues()` → `createSwapchain()` → `createImageViews()` → `createGraphicsPipeline()` → `createCommandPool()` → `createCommandBuffers()` → `createSyncObjects()`
+
+## Shaders
+
+Shaders are written in **Slang** (`shaders/shader.slang`) and compiled to SPIR-V by CMake using `slangc` from the Vulkan SDK. Output goes to `build/shaders/`.
+
+## Synchronization (Frames in Flight)
+
+Uses `MAX_FRAMES_IN_FLIGHT = 2` with the following sync objects:
+
+| Resource | Count | Indexed by | Protected by |
+|----------|-------|------------|--------------|
+| `presentCompleteSemaphores` | 2 (frames) | `frameIndex` | fence wait |
+| `renderFinishedSemaphores` | N (images) | `imageIndex` | image re-acquisition |
+| `commandBuffers` | 2 (frames) | `frameIndex` | fence wait |
+| `drawFences` | 2 (frames) | `frameIndex` | (the protection itself) |
+
+**Why the difference?** Fences tell us GPU work is done, but `presentKHR` runs asynchronously after that. The only guarantee that an image's presentation is complete is when `acquireNextImage` returns that same image again. So `renderFinishedSemaphores` must be tied to image index, not frame index.
+
+## Wayland/Hyprland Notes
+
+- Window won't appear until content is rendered (unlike X11)
+- `GLFW_RESIZABLE = FALSE` causes issues on tiling compositors - avoid it
+- Swapchain doesn't report `eErrorOutOfDateKHR` on resize - compositor scales the output instead. Must manually detect size changes via `glfwGetFramebufferSize()` or framebuffer callback
 
 ## Key Configuration
 
