@@ -84,14 +84,16 @@ class Pong {
         std::vector<vk::raii::Semaphore> renderFinishedSemaphores;
         std::vector<vk::raii::Fence> drawFences;
         uint32_t frameIndex = 0;
+        bool frameBufferResized = false;
         
         void initWindow() {
             glfwInit();
 
             glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-            // glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
             window = glfwCreateWindow(WIDTH, HEIGHT, "Pong", nullptr, nullptr);
+            glfwSetWindowUserPointer(window, this);
+            glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
         }
 
         void initVulkan() {
@@ -128,7 +130,7 @@ class Pong {
 
             auto [acquireResult, imageIndex] = swapchain.acquireNextImage(UINT64_MAX, *presentCompleteSemaphores[frameIndex], nullptr);
 
-            if (acquireResult == vk::Result::eErrorOutOfDateKHR || acquireResult == vk::Result::eSuboptimalKHR) {
+            if (frameBufferResized || acquireResult == vk::Result::eErrorOutOfDateKHR || acquireResult == vk::Result::eSuboptimalKHR) {
                 recreateSwapchain();
                 return;
             }
@@ -152,7 +154,7 @@ class Pong {
 
             // - Wait semaphore is not reset until operation completes
             // - The only way we know an image is done presenting (and therefore renderFinishedSemaphore reset) 
-            //   is if acquireNextImage returns that imageIndex. Since present needs to finish before to
+            //   is if acquireNextImage returns that imageIndex 
             // - Therefore, we need to use renderFinishedSemaphores with imageIndex to be sure we're not using it before it's reset
             const vk::PresentInfoKHR presentInfo{
                 .waitSemaphoreCount = 1,
@@ -406,21 +408,27 @@ class Pong {
         }
 
         void recreateSwapchain() {
+            // Pause if window is minimized
+            int width = 0, height = 0;
+            glfwGetFramebufferSize(window, &width, &height);
+            while (width == 0 || height == 0) {
+                glfwGetFramebufferSize(window, &width, &height);
+                glfwWaitEvents();
+            }
+
             device.waitIdle();
 
-            cleanupSwapchain();
-
-            createSwapchain();
-            createImageViews();
-            createSyncObjects();
-        }
-
-        void cleanupSwapchain() {
+            // Cleanup
             swapchainImageViews.clear();
             presentCompleteSemaphores.clear();
             renderFinishedSemaphores.clear();
             drawFences.clear();
             swapchain = nullptr;
+
+            // Recreate
+            createSwapchain();
+            createImageViews();
+            createSyncObjects();
         }
 
         void createImageViews() {
@@ -733,6 +741,11 @@ class Pong {
             file.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
             file.close();
             return buffer;
+        }
+
+        static void framebufferResizeCallback(GLFWwindow* window, int width, int height) {
+            Pong* app = reinterpret_cast<Pong*>(glfwGetWindowUserPointer(window));
+            app->frameBufferResized = true;
         }
 
         static VKAPI_ATTR vk::Bool32 VKAPI_CALL debugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT severity, vk::DebugUtilsMessageTypeFlagsEXT type, const vk::DebugUtilsMessengerCallbackDataEXT* pCallbackData, void*) {
