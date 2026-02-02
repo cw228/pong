@@ -8,7 +8,6 @@
 #define GLFW_INCLUDE_VULKAN
 #endif
 #include <GLFW/glfw3.h>
-
 #include <glm/glm.hpp>
 
 #ifndef VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
@@ -82,9 +81,14 @@ struct Vertex {
 };
 
 const std::vector<Vertex> vertices = {
-    {{0.0f, -0.5f}, {1.0f, 1.0f, 1.0f}},
-    {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-    {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}},
+};
+
+const std::vector<uint16_t> indices = {
+    0, 1, 2, 2, 3, 0
 };
 
 class Pong {
@@ -134,6 +138,8 @@ class Pong {
         vk::raii::DeviceMemory vertexBufferMemory = nullptr;
         vk::raii::Buffer stagingBuffer = nullptr;
         vk::raii::DeviceMemory stagingBufferMemory = nullptr;
+        vk::raii::Buffer indexBuffer = nullptr;
+        vk::raii::DeviceMemory indexBufferMemory = nullptr;
         // mk:members
         
         void initWindow() {
@@ -161,6 +167,7 @@ class Pong {
             createGraphicsPipeline();
             createCommandPool();
             createVertexBuffer();
+            createIndexBuffer();
             createCommandBuffers();
             createSyncObjects();
         }
@@ -661,6 +668,32 @@ class Pong {
             copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
         }
 
+        void createIndexBuffer() {
+            vk::DeviceSize bufferSize = sizeof(indices[0]) * indices.size();
+
+            createBuffer(
+                bufferSize,
+                vk::BufferUsageFlagBits::eTransferSrc,
+                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+                stagingBuffer,
+                stagingBufferMemory
+            );
+
+            void* data = stagingBufferMemory.mapMemory(0, bufferSize);
+            memcpy(data, indices.data(), bufferSize);
+            stagingBufferMemory.unmapMemory();
+
+            createBuffer(
+                bufferSize,
+                vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
+                vk::MemoryPropertyFlagBits::eDeviceLocal,
+                indexBuffer,
+                indexBufferMemory
+            );
+
+            copyBuffer(stagingBuffer, indexBuffer, bufferSize);
+        }
+
         void createCommandBuffers() {
             vk::CommandBufferAllocateInfo allocInfo{
                 .commandPool = commandPool,
@@ -728,6 +761,8 @@ class Pong {
             };
 
             bufferMemory = vk::raii::DeviceMemory(device, allocInfo);
+            // Real world app would bind multiple buffers to a single large allocation 
+            // using offsets because devices have simultanious allocation limits
             buffer.bindMemory(*bufferMemory, 0);
         }
 
