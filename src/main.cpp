@@ -132,6 +132,8 @@ class Pong {
         bool frameBufferResized = false;
         vk::raii::Buffer vertexBuffer = nullptr;
         vk::raii::DeviceMemory vertexBufferMemory = nullptr;
+        vk::raii::Buffer stagingBuffer = nullptr;
+        vk::raii::DeviceMemory stagingBufferMemory = nullptr;
         // mk:members
         
         void initWindow() {
@@ -638,15 +640,25 @@ class Pong {
 
             createBuffer(
                 bufferSize,
-                vk::BufferUsageFlagBits::eVertexBuffer,
+                vk::BufferUsageFlagBits::eTransferSrc,
                 vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+                stagingBuffer,
+                stagingBufferMemory
+            );
+
+            void* data = stagingBufferMemory.mapMemory(0, bufferSize);
+            memcpy(data, vertices.data(), bufferSize);
+            stagingBufferMemory.unmapMemory();
+
+            createBuffer(
+                bufferSize,
+                vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
+                vk::MemoryPropertyFlagBits::eDeviceLocal,
                 vertexBuffer,
                 vertexBufferMemory
             );
 
-            void* data = vertexBufferMemory.mapMemory(0, bufferSize);
-            memcpy(data, vertices.data(), bufferSize);
-            vertexBufferMemory.unmapMemory();
+            copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
         }
 
         void createCommandBuffers() {
@@ -673,6 +685,26 @@ class Pong {
         }
 
         // Helper functions
+        void copyBuffer(
+            vk::raii::Buffer& srcBuffer,
+            vk::raii::Buffer& dstBuffer,
+            vk::DeviceSize size
+        ) {
+            // Cloud use a separate transfer queue
+            // Cloud use a transient command buffer
+            vk::CommandBufferAllocateInfo allocInfo{
+                .commandPool = commandPool,
+                .level = vk::CommandBufferLevel::ePrimary,
+                .commandBufferCount = 1
+            };
+            vk::raii::CommandBuffer copyCommandBuffer = std::move(device.allocateCommandBuffers(allocInfo).front());
+            copyCommandBuffer.begin(vk::CommandBufferBeginInfo{ .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
+            copyCommandBuffer.copyBuffer(srcBuffer, dstBuffer, vk::BufferCopy(0, 0, size));
+            copyCommandBuffer.end();
+            graphicsQueue.submit(vk::SubmitInfo{ .commandBufferCount = 1, .pCommandBuffers = &*copyCommandBuffer }, nullptr);
+            graphicsQueue.waitIdle();
+        }
+
         void createBuffer(
             vk::DeviceSize size, 
             vk::BufferUsageFlags usage, 
