@@ -96,9 +96,7 @@ class Pong {
         }
 
     private:
-        // GLFWwindow* window;
         Window window;
-
         vk::raii::Context context;
         vk::raii::Instance instance = nullptr;
         vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;
@@ -636,26 +634,18 @@ class Pong {
         }
 
         void createVertexBuffer() {
-            vk::BufferCreateInfo bufferInfo{
-                .size = sizeof(vertices[0]) * vertices.size(),
-                .usage = vk::BufferUsageFlagBits::eVertexBuffer,
-                .sharingMode = vk::SharingMode::eExclusive
-            };
+            vk::DeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
 
-            vertexBuffer = vk::raii::Buffer(device, bufferInfo);
+            createBuffer(
+                bufferSize,
+                vk::BufferUsageFlagBits::eVertexBuffer,
+                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+                vertexBuffer,
+                vertexBufferMemory
+            );
 
-            vk::MemoryRequirements memRequirements = vertexBuffer.getMemoryRequirements();
-
-            vk::MemoryAllocateInfo memoryAllocInfo{
-                .allocationSize = memRequirements.size,
-                .memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
-            };
-
-            vertexBufferMemory = vk::raii::DeviceMemory(device, memoryAllocInfo);
-            vertexBuffer.bindMemory(*vertexBufferMemory, 0);
-
-            void* data = vertexBufferMemory.mapMemory(0, bufferInfo.size);
-            memcpy(data, vertices.data(), bufferInfo.size);
+            void* data = vertexBufferMemory.mapMemory(0, bufferSize);
+            memcpy(data, vertices.data(), bufferSize);
             vertexBufferMemory.unmapMemory();
         }
 
@@ -683,6 +673,32 @@ class Pong {
         }
 
         // Helper functions
+        void createBuffer(
+            vk::DeviceSize size, 
+            vk::BufferUsageFlags usage, 
+            vk::MemoryPropertyFlags properties, 
+            vk::raii::Buffer& buffer, 
+            vk::raii::DeviceMemory& bufferMemory
+        ) {
+            vk::BufferCreateInfo bufferInfo{
+                .size = size,
+                .usage = usage,
+                .sharingMode = vk::SharingMode::eExclusive
+            };
+
+            buffer = vk::raii::Buffer(device, bufferInfo);
+
+            vk::MemoryRequirements memRequirements = buffer.getMemoryRequirements();
+
+            vk::MemoryAllocateInfo allocInfo{
+                .allocationSize = memRequirements.size,
+                .memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties)
+            };
+
+            bufferMemory = vk::raii::DeviceMemory(device, allocInfo);
+            buffer.bindMemory(*bufferMemory, 0);
+        }
+
         uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) {
             vk::PhysicalDeviceMemoryProperties memProperties = physicalDevice.getMemoryProperties();
 
