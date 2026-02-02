@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Find required packages
 find_package(Vulkan REQUIRED)
 find_package(glfw3 REQUIRED)
+find_package(glm REQUIRED)
 
 # Create executable
 add_executable(pong src/main.cpp)
@@ -15,6 +16,7 @@ add_executable(pong src/main.cpp)
 target_link_libraries(pong PRIVATE
     Vulkan::Vulkan
     glfw
+    glm::glm
 )
 
 # Vulkan-Hpp config (enables designated initializers)

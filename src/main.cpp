@@ -9,6 +9,8 @@
 #endif
 #include <GLFW/glfw3.h>
 
+#include <glm/glm.hpp>
+
 #ifndef VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
 #define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
 #endif
@@ -35,9 +37,54 @@ constexpr bool macOS = true;
 constexpr bool macOS = false;
 #endif
 
+struct Window {
+    GLFWwindow* handle = nullptr;
+    operator GLFWwindow*() const { return handle; }
+    ~Window() {
+        if (handle) glfwDestroyWindow(handle);
+        glfwTerminate();
+    }
+};
+
 struct QueueFamilyIndices {
     uint32_t graphicsIndex;
     uint32_t presentationIndex;
+};
+
+struct Vertex {
+    glm::vec2 position;
+    glm::vec3 color;
+
+    static vk::VertexInputBindingDescription getBindingDescription() {
+        return {
+            .binding = 0,
+            .stride = sizeof(Vertex),
+            .inputRate = vk::VertexInputRate::eVertex
+        };
+    }
+
+    static std::vector<vk::VertexInputAttributeDescription> getAttributeDescriptions() {
+        return {
+            vk::VertexInputAttributeDescription{
+                .location = 0,
+                .binding = 0,
+                .format = vk::Format::eR32G32Sfloat,
+                .offset = offsetof(Vertex, position)
+            },
+            vk::VertexInputAttributeDescription{
+                .location = 1,
+                .binding = 0,
+                .format = vk::Format::eR32G32B32Sfloat,
+                .offset = offsetof(Vertex, color)
+            },
+        };
+    }
+};
+
+const std::vector<Vertex> vertices = {
+    {{0.0f, -0.5f}, {1.0f, 1.0f, 1.0f}},
+    {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+    {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
 };
 
 class Pong {
@@ -46,12 +93,12 @@ class Pong {
             initWindow();
             initVulkan();
             mainLoop();
-            cleanup();
         }
 
     private:
-        // mk:members
-        GLFWwindow* window;
+        // GLFWwindow* window;
+        Window window;
+
         vk::raii::Context context;
         vk::raii::Instance instance = nullptr;
         vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;
@@ -85,13 +132,18 @@ class Pong {
         std::vector<vk::raii::Fence> drawFences;
         uint32_t frameIndex = 0;
         bool frameBufferResized = false;
+        vk::raii::Buffer vertexBuffer = nullptr;
+        vk::raii::DeviceMemory vertexBufferMemory = nullptr;
+        // mk:members
         
         void initWindow() {
             glfwInit();
 
             glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+            glfwWindowHintString(GLFW_WAYLAND_APP_ID, "game");
 
-            window = glfwCreateWindow(WIDTH, HEIGHT, "Pong", nullptr, nullptr);
+            window.handle = glfwCreateWindow(WIDTH, HEIGHT, "Pong", nullptr, nullptr);
+
             glfwSetWindowUserPointer(window, this);
             glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
         }
@@ -108,13 +160,22 @@ class Pong {
             createImageViews();
             createGraphicsPipeline();
             createCommandPool();
+            createVertexBuffer();
             createCommandBuffers();
             createSyncObjects();
         }
 
         void mainLoop() {
-            while (!glfwWindowShouldClose(window)) {
+            // while (!glfwWindowShouldClose(window)) {
+            //     glfwPollEvents();
+            //     drawFrame();
+            // }
+
+            while (true) {
                 glfwPollEvents();
+                if (glfwWindowShouldClose(window)) {
+                    break;
+                }
                 drawFrame();
             }
 
@@ -130,9 +191,13 @@ class Pong {
 
             auto [acquireResult, imageIndex] = swapchain.acquireNextImage(UINT64_MAX, *presentCompleteSemaphores[frameIndex], nullptr);
 
-            if (frameBufferResized || acquireResult == vk::Result::eErrorOutOfDateKHR || acquireResult == vk::Result::eSuboptimalKHR) {
+            if (acquireResult == vk::Result::eErrorOutOfDateKHR) {
                 recreateSwapchain();
                 return;
+            }
+
+            if (acquireResult == vk::Result::eSuboptimalKHR) {
+                std::println("acquireResult suboptimal");
             }
 
             recordCommandBuffer(imageIndex);
@@ -165,6 +230,11 @@ class Pong {
             };
 
             vk::Result presentResult = presentQueue.presentKHR(presentInfo);
+
+            if (presentResult == vk::Result::eErrorOutOfDateKHR || presentResult == vk::Result::eSuboptimalKHR || frameBufferResized) {
+                frameBufferResized = false;
+                recreateSwapchain();
+            }
 
             frameIndex = (frameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
         }
@@ -203,6 +273,7 @@ class Pong {
 
             commandBuffer.beginRendering(renderingInfo);
             commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
+            commandBuffer.bindVertexBuffers(0, *vertexBuffer, {0});
 
             vk::Viewport viewport{
                 .x = 0.0f,
@@ -220,7 +291,7 @@ class Pong {
 
             commandBuffer.setViewport(0, viewport);
             commandBuffer.setScissor(0, scissor);
-            commandBuffer.draw(3, 1, 0, 0);
+            commandBuffer.draw(vertices.size(), 1, 0, 0);
             commandBuffer.endRendering();
 
             transitionImageLayout(
@@ -234,10 +305,6 @@ class Pong {
             );
 
             commandBuffer.end();
-        }
-
-        void cleanup() {
-            glfwDestroyWindow(window);
         }
 
         // Vulkan initialization
@@ -473,7 +540,14 @@ class Pong {
 
             vk::PipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
 
-            vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
+            vk::VertexInputBindingDescription bindingDescription = Vertex::getBindingDescription();
+            std::vector<vk::VertexInputAttributeDescription> attributeDescriptions = Vertex::getAttributeDescriptions();
+            vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
+                .vertexBindingDescriptionCount = 1,
+                .pVertexBindingDescriptions = &bindingDescription,
+                .vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size()),
+                .pVertexAttributeDescriptions = attributeDescriptions.data()
+            };
 
             vk::PipelineInputAssemblyStateCreateInfo inputAssembly{
                 .topology = vk::PrimitiveTopology::eTriangleList
@@ -561,6 +635,30 @@ class Pong {
             commandPool = vk::raii::CommandPool(device, poolInfo);
         }
 
+        void createVertexBuffer() {
+            vk::BufferCreateInfo bufferInfo{
+                .size = sizeof(vertices[0]) * vertices.size(),
+                .usage = vk::BufferUsageFlagBits::eVertexBuffer,
+                .sharingMode = vk::SharingMode::eExclusive
+            };
+
+            vertexBuffer = vk::raii::Buffer(device, bufferInfo);
+
+            vk::MemoryRequirements memRequirements = vertexBuffer.getMemoryRequirements();
+
+            vk::MemoryAllocateInfo memoryAllocInfo{
+                .allocationSize = memRequirements.size,
+                .memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
+            };
+
+            vertexBufferMemory = vk::raii::DeviceMemory(device, memoryAllocInfo);
+            vertexBuffer.bindMemory(*vertexBufferMemory, 0);
+
+            void* data = vertexBufferMemory.mapMemory(0, bufferInfo.size);
+            memcpy(data, vertices.data(), bufferInfo.size);
+            vertexBufferMemory.unmapMemory();
+        }
+
         void createCommandBuffers() {
             vk::CommandBufferAllocateInfo allocInfo{
                 .commandPool = commandPool,
@@ -585,6 +683,18 @@ class Pong {
         }
 
         // Helper functions
+        uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) {
+            vk::PhysicalDeviceMemoryProperties memProperties = physicalDevice.getMemoryProperties();
+
+            for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+                if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+                    return i;
+                }
+            }
+
+            throw std::runtime_error("failed to find suitable memory type!");
+        }
+
         void transitionImageLayout(
             uint32_t imageIndex,
             vk::ImageLayout oldLayout,
@@ -769,18 +879,14 @@ class Pong {
 };
 
 int main() {
-    {
-        Pong pong;
+    Pong pong;
 
-        try {
-            pong.run();
-        } catch (const std::exception& e) {
-            std::cerr << e.what() << std::endl;
-            return EXIT_FAILURE;
-        }
+    try {
+        pong.run();
+    } catch (const std::exception& e) {
+        std::cerr << e.what() << std::endl;
+        return EXIT_FAILURE;
     }
-
-    glfwTerminate();
 
     return EXIT_SUCCESS;
 }
