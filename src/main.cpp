@@ -120,15 +120,12 @@ class Pong {
         }
 
         void drawFrame() {
-            // Block if 2 command buffers are being executed
             vk::Result fenceResult = device.waitForFences(*drawFences[frameIndex], vk::True, UINT64_MAX);
 
             if (fenceResult != vk::Result::eSuccess) {
                 throw std::runtime_error("failed to wait for fence");
             }
 
-            // If we have less than 2 command buffers executing, request an image. 
-            // Signal when that image is done presenting (separate op than command execution)
             auto [acquireResult, imageIndex] = swapchain.acquireNextImage(UINT64_MAX, *presentCompleteSemaphores[frameIndex], nullptr);
 
             if (acquireResult == vk::Result::eErrorOutOfDateKHR || acquireResult == vk::Result::eSuboptimalKHR) {
@@ -140,8 +137,6 @@ class Pong {
 
             device.resetFences(*drawFences[frameIndex]);
 
-            // Execute a command buffer when image is done presenting
-            // Signal renderFinished when the command buffer is finished executing
             vk::PipelineStageFlags waitDestinationStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput);
             const vk::SubmitInfo submitInfo{
                 .waitSemaphoreCount = 1,
@@ -153,10 +148,12 @@ class Pong {
                 .pSignalSemaphores = &*renderFinishedSemaphores[imageIndex]
             };
 
-            // We will have max 2 command buffers executing concurrently 
             graphicsQueue.submit(submitInfo, *drawFences[frameIndex]);
 
-            // wait on renderFinished to present
+            // - Wait semaphore is not reset until operation completes
+            // - The only way we know an image is done presenting (and therefore renderFinishedSemaphore reset) 
+            //   is if acquireNextImage returns that imageIndex. Since present needs to finish before to
+            // - Therefore, we need to use renderFinishedSemaphores with imageIndex to be sure we're not using it before it's reset
             const vk::PresentInfoKHR presentInfo{
                 .waitSemaphoreCount = 1,
                 .pWaitSemaphores = &*renderFinishedSemaphores[imageIndex],
