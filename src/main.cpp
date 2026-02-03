@@ -80,6 +80,12 @@ struct Vertex {
     }
 };
 
+struct UniformBufferObject {
+    glm::mat4 model;
+    glm::mat4 view;
+    glm::mat4 projection;
+};
+
 const std::vector<Vertex> vertices = {
     {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
     {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
@@ -124,10 +130,10 @@ class Pong {
         vk::Format swapchainImageFormat = vk::Format::eUndefined;
         vk::Extent2D swapchainExtent;
         std::vector<vk::raii::ImageView> swapchainImageViews;
+        vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
         vk::raii::PipelineLayout pipelineLayout = nullptr;
         vk::raii::Pipeline graphicsPipeline = nullptr;
         vk::raii::CommandPool commandPool = nullptr;
-
         std::vector<vk::raii::CommandBuffer> commandBuffers;
         std::vector<vk::raii::Semaphore> presentCompleteSemaphores;
         std::vector<vk::raii::Semaphore> renderFinishedSemaphores;
@@ -140,6 +146,9 @@ class Pong {
         vk::raii::DeviceMemory stagingBufferMemory = nullptr;
         vk::raii::Buffer indexBuffer = nullptr;
         vk::raii::DeviceMemory indexBufferMemory = nullptr;
+        std::vector<vk::raii::Buffer> uniformBuffers;
+        std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
+        std::vector<void*> uniformBuffersMapped;
         // mk:members
         
         void initWindow() {
@@ -164,10 +173,12 @@ class Pong {
             getQueues();
             createSwapchain();
             createImageViews();
+            createDescriptorSetLayout();
             createGraphicsPipeline();
             createCommandPool();
             createVertexBuffer();
             createIndexBuffer();
+            createUniformBuffers();
             createCommandBuffers();
             createSyncObjects();
         }
@@ -281,6 +292,7 @@ class Pong {
             commandBuffer.beginRendering(renderingInfo);
             commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
             commandBuffer.bindVertexBuffers(0, *vertexBuffer, {0});
+            commandBuffer.bindIndexBuffer(indexBuffer, 0, vk::IndexType::eUint16);
 
             vk::Viewport viewport{
                 .x = 0.0f,
@@ -298,7 +310,7 @@ class Pong {
 
             commandBuffer.setViewport(0, viewport);
             commandBuffer.setScissor(0, scissor);
-            commandBuffer.draw(vertices.size(), 1, 0, 0);
+            commandBuffer.drawIndexed(indices.size(), 1, 0, 0, 0);
             commandBuffer.endRendering();
 
             transitionImageLayout(
@@ -526,6 +538,20 @@ class Pong {
             }
         }
 
+        void createDescriptorSetLayout() {
+            vk::DescriptorSetLayoutBinding uboLayoutBinding{
+                .binding = 0,
+                .descriptorType = vk::DescriptorType::eUniformBuffer,
+                .descriptorCount = 1,
+                .stageFlags = vk::ShaderStageFlagBits::eVertex
+            };
+            vk::DescriptorSetLayoutCreateInfo layoutInfo{
+                .bindingCount = 1,
+                .pBindings = &uboLayoutBinding
+            };
+            descriptorSetLayout = vk::raii::DescriptorSetLayout(device, layoutInfo);
+        }
+
         void createGraphicsPipeline() {
             std::vector<char> vertShaderCode = readFile("build/shaders/shader_vertMain.spv");
             vk::raii::ShaderModule vertShaderModule = createShaderModule(vertShaderCode);
@@ -604,7 +630,8 @@ class Pong {
             };
 
             vk::PipelineLayoutCreateInfo pipelineLayoutInfo{
-                .setLayoutCount = 0,
+                .setLayoutCount = 1,
+                .pSetLayouts = &*descriptorSetLayout,
                 .pushConstantRangeCount = 0
             };
 
@@ -694,6 +721,28 @@ class Pong {
             copyBuffer(stagingBuffer, indexBuffer, bufferSize);
         }
 
+        void createUniformBuffers() {
+            uniformBuffers.clear();
+            uniformBuffersMemory.clear();
+            uniformBuffersMapped.clear();
+
+            for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+                vk::DeviceSize bufferSize = sizeof(UniformBufferObject);
+                vk::raii::Buffer buffer = nullptr;
+                vk::raii::DeviceMemory bufferMemory = nullptr;
+                createBuffer(
+                    bufferSize, 
+                    vk::BufferUsageFlagBits::eUniformBuffer, 
+                    vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+                    buffer,
+                    bufferMemory
+                );
+                uniformBuffers.emplace_back(std::move(buffer));
+                uniformBuffersMemory.emplace_back(std::move(bufferMemory));
+                uniformBuffersMapped.emplace_back(uniformBuffersMemory[i].mapMemory(0, bufferSize));
+            }
+        }
+
         void createCommandBuffers() {
             vk::CommandBufferAllocateInfo allocInfo{
                 .commandPool = commandPool,
@@ -763,6 +812,7 @@ class Pong {
             bufferMemory = vk::raii::DeviceMemory(device, allocInfo);
             // Real world app would bind multiple buffers to a single large allocation 
             // using offsets because devices have simultanious allocation limits
+            // You can even put multiple vertex/index buffers in the smae VkBuffer (which driver developers recommend)
             buffer.bindMemory(*bufferMemory, 0);
         }
 
