@@ -157,6 +157,8 @@ class Pong {
         std::vector<void*> uniformBuffersMapped;
         vk::raii::DescriptorPool descriptorPool = nullptr;
         std::vector<vk::raii::DescriptorSet> descriptorSets;
+        vk::raii::Image textureImage = nullptr;
+        vk::raii::DeviceMemory textureImageMemory = nullptr;
         // mk:members
         
         void initWindow() {
@@ -218,10 +220,6 @@ class Pong {
             if (acquireResult == vk::Result::eErrorOutOfDateKHR) {
                 recreateSwapchain();
                 return;
-            }
-
-            if (acquireResult == vk::Result::eSuboptimalKHR) {
-                std::println("acquireResult suboptimal");
             }
 
             updateUniformBuffer(frameIndex);
@@ -717,6 +715,15 @@ class Pong {
             memcpy(data, pixels, imageSize);
             stagingBufferMemory.unmapMemory();
             stbi_image_free(pixels);
+
+            createImage(
+                texWidth, texHeight, 
+                vk::Format::eR8G8B8A8Srgb,
+                vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled, 
+                vk::MemoryPropertyFlagBits::eDeviceLocal,
+                textureImage,
+                textureImageMemory
+            );
         }
 
         void createVertexBuffer() {
@@ -857,6 +864,39 @@ class Pong {
         }
 
         // Helper functions
+        void createImage(
+            uint32_t width, 
+            uint32_t height, 
+            vk::Format format, 
+            vk::ImageUsageFlags usage, 
+            vk::MemoryPropertyFlags properties, 
+            vk::raii::Image& image, 
+            vk::raii::DeviceMemory& imageMemory
+        ) {
+            vk::ImageCreateInfo imageInfo{
+                .imageType = vk::ImageType::e2D,
+                .format = format,
+                .extent = { width, height, 1 },
+                .mipLevels = 1,
+                .arrayLayers = 1,
+                .samples = vk::SampleCountFlagBits::e1,
+                .tiling = vk::ImageTiling::eOptimal,
+                .usage = usage,
+                .sharingMode = vk::SharingMode::eExclusive,
+                .initialLayout = vk::ImageLayout::eUndefined
+            };
+
+            image = vk::raii::Image(device, imageInfo);
+
+            vk::MemoryRequirements memRequirements = image.getMemoryRequirements();
+            vk::MemoryAllocateInfo allocInfo{
+                .allocationSize = memRequirements.size,
+                .memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties)
+            };
+            imageMemory = vk::raii::DeviceMemory(device, allocInfo);
+            image.bindMemory(imageMemory, 0);
+        }
+
         void copyBuffer(
             vk::raii::Buffer& srcBuffer,
             vk::raii::Buffer& dstBuffer,
