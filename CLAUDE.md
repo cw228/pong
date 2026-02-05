@@ -53,6 +53,18 @@ Uses `MAX_FRAMES_IN_FLIGHT = 2` with the following sync objects:
 
 **Input latency:** More frames in flight = more latency between input and display. With 2 frames in flight at 60Hz, expect ~50ms pipeline latency. This is why competitive games minimize frames in flight.
 
+**Synchronization primitives summary:**
+
+| Primitive | Synchronizes between |
+|-----------|---------------------|
+| Pipeline barrier | Commands within the same queue (not just within a single command buffer) |
+| Semaphore | Queue submissions / queue operations (e.g., acquire → submit → present) |
+| Fence | GPU and CPU |
+
+**Access flags — prefer narrow over broad:** Use `eShaderSampledRead` instead of `eShaderRead` when the image is only used as a sampled texture. `eShaderRead` is a catch-all covering sampled reads, storage reads, and binding table reads — overly broad flags may cause unnecessary cache flushes.
+
+**Init-time GPU uploads:** `device.waitIdle()` in `endSingleTimeCommands()` is fine for init-time staging uploads (textures, vertex/index buffers). For runtime uploads, replace with a fence on the specific submit.
+
 ## Wayland/Hyprland Notes
 
 - Window won't appear until content is rendered (unlike X11)
@@ -80,6 +92,10 @@ Uses `MAX_FRAMES_IN_FLIGHT = 2` with the following sync objects:
 **Return values:** Returning RAII objects by value is idiomatic. The compiler uses move semantics or copy elision (constructs directly in caller's stack frame). No explicit `std::move` needed on return.
 
 **RAII wrapper initialization:** Use `= nullptr` for empty handles to be assigned later (clearer than `({})`). RAII wrappers implicitly convert to bare handles, or use `*wrapper` to explicitly extract the handle.
+
+**RAII wrappers and containers:** RAII wrappers are non-copyable. When adding to a `std::vector`, either use `std::move(obj)` with `push_back`, or pass the factory function return value directly (it's already an rvalue): `vec.push_back(createThing(...))`.
+
+**Descriptor pool sizing:** `maxSets` and `pPoolSizes` are independent limits — `maxSets` caps total descriptor sets allocated, `pPoolSizes` caps total descriptors per type. Both must be satisfied for allocation to succeed.
 
 ## Shader Notes
 
