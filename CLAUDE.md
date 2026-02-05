@@ -45,6 +45,10 @@ Uses `MAX_FRAMES_IN_FLIGHT = 2` with the following sync objects:
 
 **Why the difference?** Fences tell us GPU work is done, but `presentKHR` runs asynchronously after that. The only guarantee that an image's presentation is complete is when `acquireNextImage` returns that same image again. So `renderFinishedSemaphores` must be tied to image index, not frame index.
 
+**Semaphore reuse rules:** Binary semaphores must be used in strict signal/wait pairs. A semaphore can only be reused after both operations complete. The fence tells us `submit()` finished (so `presentCompleteSemaphore`'s wait completed → safe to reuse). But for `renderFinishedSemaphore`, the wait is in `presentKHR` which has no fence — we rely on `acquireNextImage` returning the same image to know that present completed.
+
+**Input latency:** More frames in flight = more latency between input and display. With 2 frames in flight at 60Hz, expect ~50ms pipeline latency. This is why competitive games minimize frames in flight.
+
 ## Wayland/Hyprland Notes
 
 - Window won't appear until content is rendered (unlike X11)
@@ -59,6 +63,17 @@ Uses `MAX_FRAMES_IN_FLIGHT = 2` with the following sync objects:
 - Precompiled headers for `vulkan_raii.hpp` and `GLFW/glfw3.h` to reduce compile times
 - `VK_KHR_portability_subset` device extension required on macOS (MoltenVK)
 - MoltenVK is Vulkan 1.2, so Vulkan 1.3 features need their extensions explicitly enabled on macOS (e.g., `VK_KHR_synchronization2`, `VK_KHR_dynamic_rendering`)
+
+## C++ Conventions
+
+**Parameter passing:**
+- Vulkan handles (`vk::Image`, `vk::Buffer`) — pass by value (they're just 64-bit integers)
+- RAII wrappers (`vk::raii::Image`, `vk::raii::CommandBuffer`) — pass by reference (non-copyable)
+- Large structs, `std::string`, `std::vector` — pass by `const T&`
+
+**Swapchain images:** `swapchain.getImages()` returns `vk::Image` (not `vk::raii::Image`) because the swapchain owns these images. You don't destroy them — the swapchain does when it's destroyed.
+
+**Return values:** Returning RAII objects by value is idiomatic. The compiler uses move semantics or copy elision (constructs directly in caller's stack frame). No explicit `std::move` needed on return.
 
 ## Troubleshooting
 
