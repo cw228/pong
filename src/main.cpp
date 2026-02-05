@@ -282,8 +282,9 @@ class Pong {
 
             commandBuffer.begin({});
 
-            transitionImageLayout(
-                imageIndex,
+            recordImageLayoutTransition(
+                commandBuffer,
+                swapchainImages[imageIndex],
                 vk::ImageLayout::eUndefined,
                 vk::ImageLayout::eColorAttachmentOptimal,
                 {},
@@ -334,8 +335,9 @@ class Pong {
             commandBuffer.drawIndexed(indices.size(), 1, 0, 0, 0);
             commandBuffer.endRendering();
 
-            transitionImageLayout(
-                imageIndex,
+            recordImageLayoutTransition(
+                commandBuffer,
+                swapchainImages[imageIndex],
                 vk::ImageLayout::eColorAttachmentOptimal,
                 vk::ImageLayout::ePresentSrcKHR,
                 vk::AccessFlagBits2::eColorAttachmentWrite,
@@ -864,6 +866,33 @@ class Pong {
         }
 
         // Helper functions
+        vk::raii::CommandBuffer beginSingleTimeCommands() {
+            vk::CommandBufferAllocateInfo allocInfo{
+                .commandPool = commandPool,
+                .level = vk::CommandBufferLevel::ePrimary,
+                .commandBufferCount = 1
+            };
+            vk::raii::CommandBuffer commandBuffer = std::move(device.allocateCommandBuffers(allocInfo).front());
+            vk::CommandBufferBeginInfo beginInfo{ .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit };
+
+            commandBuffer.begin(beginInfo);
+
+            return commandBuffer;
+        }
+
+        void endSingleTimeCommands(vk::raii::CommandBuffer& commandBuffer) {
+            commandBuffer.end();
+
+            vk::SubmitInfo submitInfo{
+                .commandBufferCount = 1,
+                .pCommandBuffers = &*commandBuffer
+            };
+
+            graphicsQueue.submit(submitInfo, nullptr);
+
+            device.waitIdle();
+        }
+
         void createImage(
             uint32_t width, 
             uint32_t height, 
@@ -904,17 +933,9 @@ class Pong {
         ) {
             // Cloud use a separate transfer queue
             // Cloud use a transient command buffer
-            vk::CommandBufferAllocateInfo allocInfo{
-                .commandPool = commandPool,
-                .level = vk::CommandBufferLevel::ePrimary,
-                .commandBufferCount = 1
-            };
-            vk::raii::CommandBuffer copyCommandBuffer = std::move(device.allocateCommandBuffers(allocInfo).front());
-            copyCommandBuffer.begin(vk::CommandBufferBeginInfo{ .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
+            vk::raii::CommandBuffer copyCommandBuffer = beginSingleTimeCommands();
             copyCommandBuffer.copyBuffer(srcBuffer, dstBuffer, vk::BufferCopy(0, 0, size));
-            copyCommandBuffer.end();
-            graphicsQueue.submit(vk::SubmitInfo{ .commandBufferCount = 1, .pCommandBuffers = &*copyCommandBuffer }, nullptr);
-            graphicsQueue.waitIdle();
+            endSingleTimeCommands(copyCommandBuffer);
         }
 
         void createBuffer(
@@ -958,8 +979,9 @@ class Pong {
             throw std::runtime_error("failed to find suitable memory type!");
         }
 
-        void transitionImageLayout(
-            uint32_t imageIndex,
+        void recordImageLayoutTransition(
+            vk::raii::CommandBuffer& commandBuffer,
+            vk::Image image,
             vk::ImageLayout oldLayout,
             vk::ImageLayout newLayout,
             vk::AccessFlags2 srcAccessMask,
@@ -976,7 +998,7 @@ class Pong {
                 .newLayout = newLayout,
                 .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
                 .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-                .image = swapchainImages[imageIndex],
+                .image = image,
                 .subresourceRange = {
                     .aspectMask = vk::ImageAspectFlagBits::eColor,
                     .baseMipLevel = 0,
@@ -992,7 +1014,7 @@ class Pong {
                 .pImageMemoryBarriers = &barrier
             };
 
-            commandBuffers[frameIndex].pipelineBarrier2(dependencyInfo);
+            commandBuffer.pipelineBarrier2(dependencyInfo);
         }
 
         std::vector<const char*> getRequiredExtentions() {
