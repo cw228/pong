@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Tool Usage
+
+**Context7 MCP:** Always use Context7 (`resolve-library-id` then `query-docs`) to look up library/API documentation when answering questions about APIs, generating code that uses external libraries, or providing setup/configuration steps. Do not rely solely on training data for library-specific details.
+
 ## Build Commands
 
 ```bash
@@ -26,7 +30,7 @@ Single-file Vulkan application in `src/main.cpp` using:
 - **GLFW** for window management and Vulkan surface creation
 
 The `Pong` class encapsulates all Vulkan setup with initialization flow:
-`initWindow()` → `createInstance()` → `setupDebugMessenger()` → `createSurface()` → `pickPhysicalDevice()` → `findQueueFamilies()` → `createLogicalDevice()` → `getQueues()` → `createSwapchain()` → `createImageViews()` → `createGraphicsPipeline()` → `createCommandPool()` → `createCommandBuffers()` → `createSyncObjects()`
+`initWindow()` → `createInstance()` → `setupDebugMessenger()` → `createSurface()` → `pickPhysicalDevice()` → `findQueueFamilies()` → `createLogicalDevice()` → `getQueues()` → `createSwapchain()` → `createImageViews()` → `createDescriptorSetLayout()` → `createGraphicsPipeline()` → `createCommandPool()` → `createVertexBuffer()` → `createIndexBuffer()` → `createUniformBuffers()` → `createCommandBuffers()` → `createSyncObjects()`
 
 ## Shaders
 
@@ -75,9 +79,21 @@ Uses `MAX_FRAMES_IN_FLIGHT = 2` with the following sync objects:
 
 **Return values:** Returning RAII objects by value is idiomatic. The compiler uses move semantics or copy elision (constructs directly in caller's stack frame). No explicit `std::move` needed on return.
 
+**RAII wrapper initialization:** Use `= nullptr` for empty handles to be assigned later (clearer than `({})`). RAII wrappers implicitly convert to bare handles, or use `*wrapper` to explicitly extract the handle.
+
+## Shader Notes
+
+**MVP matrix order:** In Slang/HLSL, transformations apply right-to-left. Use `mul(projection, mul(view, mul(model, position)))` to get the correct `projection * view * model * position` order.
+
 ## Troubleshooting
 
 **Stale precompiled header after system update:** If you see an error about a header being modified since the PCH was built, delete the PCH and rebuild:
 ```bash
 rm -f build/CMakeFiles/pong.dir/cmake_pch.hxx.pch && cmake --build build
 ```
+
+**GPU hang / system freeze:** If running the app freezes the system (black screen, blinking cursor), the GPU is hanging. Common cause: shader accesses a descriptor (UBO, texture) that was never bound. Always ensure descriptor sets are created, updated, and bound before draw calls that use them.
+
+## Dependencies
+
+- **stb_image** (`pacman -S stb`) — header-only image loading. Requires `#define STB_IMAGE_IMPLEMENTATION` before include in exactly one source file. `stbi_uc` is a typedef for `unsigned char`.

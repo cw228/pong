@@ -58,6 +58,7 @@ struct QueueFamilyIndices {
 struct Vertex {
     glm::vec2 position;
     glm::vec3 color;
+    glm::vec2 textureCoordinates;
 
     static vk::VertexInputBindingDescription getBindingDescription() {
         return {
@@ -67,7 +68,7 @@ struct Vertex {
         };
     }
 
-    static std::vector<vk::VertexInputAttributeDescription> getAttributeDescriptions() {
+    static std::array<vk::VertexInputAttributeDescription, 3> getAttributeDescriptions() {
         return {
             vk::VertexInputAttributeDescription{
                 .location = 0,
@@ -81,6 +82,12 @@ struct Vertex {
                 .format = vk::Format::eR32G32B32Sfloat,
                 .offset = offsetof(Vertex, color)
             },
+            vk::VertexInputAttributeDescription{
+                .location = 2,
+                .binding = 0,
+                .format = vk::Format::eR32G32Sfloat,
+                .offset = offsetof(Vertex, textureCoordinates)
+            },
         };
     }
 };
@@ -93,10 +100,10 @@ struct UniformBufferObject {
 };
 
 const std::vector<Vertex> vertices = {
-    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}},
+    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {2.0f, 0.0f}},
+    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 2.0f}},
+    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {2.0f, 2.0f}},
 };
 
 const std::vector<uint16_t> indices = {
@@ -140,7 +147,7 @@ class Pong {
         vk::raii::PipelineLayout pipelineLayout = nullptr;
         vk::raii::Pipeline graphicsPipeline = nullptr;
         vk::raii::CommandPool commandPool = nullptr;
-        std::vector<vk::raii::CommandBuffer> commandBuffers;
+        std::vector<vk::raii::CommandBuffer> frameCommandBuffers;
         std::vector<vk::raii::Semaphore> presentCompleteSemaphores;
         std::vector<vk::raii::Semaphore> renderFinishedSemaphores;
         std::vector<vk::raii::Fence> drawFences;
@@ -159,6 +166,8 @@ class Pong {
         std::vector<vk::raii::DescriptorSet> descriptorSets;
         vk::raii::Image textureImage = nullptr;
         vk::raii::DeviceMemory textureImageMemory = nullptr;
+        vk::raii::ImageView textureImageView = nullptr;
+        vk::raii::Sampler textureSampler = nullptr;
         // mk:members
         
         void initWindow() {
@@ -182,11 +191,13 @@ class Pong {
             createLogicalDevice();
             getQueues();
             createSwapchain();
-            createImageViews();
+            createSwapchainImageViews();
             createDescriptorSetLayout();
             createGraphicsPipeline();
             createCommandPool();
             createTextureImage();
+            createTextureImageView();
+            createTextureSampler();
             createVertexBuffer();
             createIndexBuffer();
             createUniformBuffers();
@@ -224,7 +235,7 @@ class Pong {
 
             updateUniformBuffer(frameIndex);
 
-            recordCommandBuffer(imageIndex);
+            recordFrameCommandBuffer(imageIndex);
 
             device.resetFences(*drawFences[frameIndex]);
 
@@ -234,7 +245,7 @@ class Pong {
                 .pWaitSemaphores = &*presentCompleteSemaphores[frameIndex],
                 .pWaitDstStageMask = &waitDestinationStageMask,
                 .commandBufferCount = 1,
-                .pCommandBuffers = &*commandBuffers[frameIndex],
+                .pCommandBuffers = &*frameCommandBuffers[frameIndex],
                 .signalSemaphoreCount = 1,
                 .pSignalSemaphores = &*renderFinishedSemaphores[imageIndex]
             };
@@ -277,8 +288,8 @@ class Pong {
             memcpy(uniformBuffersMapped[currentFrameIndex], &ubo, sizeof(ubo));
         }
 
-        void recordCommandBuffer(uint32_t imageIndex) {
-            vk::raii::CommandBuffer& commandBuffer = commandBuffers[frameIndex];
+        void recordFrameCommandBuffer(uint32_t imageIndex) {
+            vk::raii::CommandBuffer& commandBuffer = frameCommandBuffers[frameIndex];
 
             commandBuffer.begin({});
 
@@ -452,7 +463,7 @@ class Pong {
                 vk::PhysicalDeviceVulkan13Features, 
                 vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
             > featureChain = {
-                {},
+                { .features = { .samplerAnisotropy = true } },
                 { .shaderDrawParameters = true },
                 { .synchronization2 = true, .dynamicRendering = true },
                 { .extendedDynamicState = true }
@@ -536,42 +547,39 @@ class Pong {
 
             // Recreate
             createSwapchain();
-            createImageViews();
+            createSwapchainImageViews();
             createSyncObjects();
         }
 
-        void createImageViews() {
+        void createSwapchainImageViews() {
             swapchainImageViews.clear();
 
-            vk::ImageViewCreateInfo imageViewCreateInfo{
-                .viewType = vk::ImageViewType::e2D,
-                .format = swapchainImageFormat,
-                .subresourceRange = {
-                    .aspectMask = vk::ImageAspectFlagBits::eColor,
-                    .baseMipLevel = 0,
-                    .levelCount = 1,
-                    .baseArrayLayer = 0,
-                    .layerCount = 1
-                }
-            };
-
             for (vk::Image image : swapchainImages) {
-                imageViewCreateInfo.image = image;
-                swapchainImageViews.emplace_back(device, imageViewCreateInfo);
+                swapchainImageViews.push_back(createImageView(image, swapchainImageFormat));
             }
         }
 
         void createDescriptorSetLayout() {
-            vk::DescriptorSetLayoutBinding uboLayoutBinding{
-                .binding = 0,
-                .descriptorType = vk::DescriptorType::eUniformBuffer,
-                .descriptorCount = 1,
-                .stageFlags = vk::ShaderStageFlagBits::eVertex
+            std::array bindings = {
+                vk::DescriptorSetLayoutBinding{
+                    .binding = 0,
+                    .descriptorType = vk::DescriptorType::eUniformBuffer,
+                    .descriptorCount = 1,
+                    .stageFlags = vk::ShaderStageFlagBits::eVertex
+                },
+                vk::DescriptorSetLayoutBinding{
+                    .binding = 1,
+                    .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+                    .descriptorCount = 1,
+                    .stageFlags = vk::ShaderStageFlagBits::eFragment
+                }
             };
+
             vk::DescriptorSetLayoutCreateInfo layoutInfo{
-                .bindingCount = 1,
-                .pBindings = &uboLayoutBinding
+                .bindingCount = static_cast<uint32_t>(bindings.size()),
+                .pBindings = bindings.data()
             };
+
             descriptorSetLayout = vk::raii::DescriptorSetLayout(device, layoutInfo);
         }
 
@@ -597,7 +605,7 @@ class Pong {
             vk::PipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
 
             vk::VertexInputBindingDescription bindingDescription = Vertex::getBindingDescription();
-            std::vector<vk::VertexInputAttributeDescription> attributeDescriptions = Vertex::getAttributeDescriptions();
+            std::array attributeDescriptions = Vertex::getAttributeDescriptions();
 
             vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
                 .vertexBindingDescriptionCount = 1,
@@ -610,7 +618,7 @@ class Pong {
                 .topology = vk::PrimitiveTopology::eTriangleList
             };
 
-            std::vector<vk::DynamicState> dynamicStates = {
+            std::array dynamicStates = {
                 vk::DynamicState::eViewport,
                 vk::DynamicState::eScissor
             };
@@ -726,6 +734,57 @@ class Pong {
                 textureImage,
                 textureImageMemory
             );
+            
+            vk::raii::CommandBuffer commandBuffer = beginSingleTimeCommands();
+            recordImageLayoutTransition(
+                commandBuffer,
+                textureImage,
+                vk::ImageLayout::eUndefined,
+                vk::ImageLayout::eTransferDstOptimal,
+                {},
+                vk::AccessFlagBits2::eTransferWrite,
+                vk::PipelineStageFlagBits2::eTopOfPipe,
+                vk::PipelineStageFlagBits2::eTransfer
+            );
+            recordBufferImageCopy(commandBuffer, stagingBuffer, textureImage, texWidth, texHeight);
+            recordImageLayoutTransition(
+                commandBuffer,
+                textureImage,
+                vk::ImageLayout::eTransferDstOptimal,
+                vk::ImageLayout::eShaderReadOnlyOptimal,
+                vk::AccessFlagBits2::eTransferWrite,
+                vk::AccessFlagBits2::eShaderRead,
+                // vk::AccessFlagBits2::eShaderSampledRead,
+                vk::PipelineStageFlagBits2::eTransfer,
+                vk::PipelineStageFlagBits2::eFragmentShader
+            );
+            endSingleTimeCommands(commandBuffer);
+        }
+
+        void createTextureImageView() {
+            textureImageView = createImageView(textureImage, vk::Format::eR8G8B8A8Srgb);
+        }
+
+        void createTextureSampler() {
+            vk::PhysicalDeviceProperties properties = physicalDevice.getProperties();
+            vk::SamplerCreateInfo samplerInfo{
+                .magFilter = vk::Filter::eLinear,
+                .minFilter = vk::Filter::eLinear,
+                .mipmapMode = vk::SamplerMipmapMode::eLinear,
+                .addressModeU = vk::SamplerAddressMode::eRepeat,
+                .addressModeV = vk::SamplerAddressMode::eRepeat,
+                .addressModeW = vk::SamplerAddressMode::eRepeat,
+                .mipLodBias = 0.0f,
+                .anisotropyEnable = vk::True,
+                .maxAnisotropy = properties.limits.maxSamplerAnisotropy,
+                .compareEnable = vk::False,
+                .compareOp = vk::CompareOp::eAlways,
+                .minLod = 0.0f,
+                .maxLod = 0.0f,
+                .borderColor = vk::BorderColor::eIntOpaqueBlack,
+                .unnormalizedCoordinates = vk::False
+            };
+            textureSampler = vk::raii::Sampler(device, samplerInfo);
         }
 
         void createVertexBuffer() {
@@ -803,13 +862,24 @@ class Pong {
         }
 
         void createDescriptorPool() {
-            vk::DescriptorPoolSize poolSize(vk::DescriptorType::eUniformBuffer, MAX_FRAMES_IN_FLIGHT);
+            std::array poolSizes {
+                vk::DescriptorPoolSize{
+                    .type = vk::DescriptorType::eUniformBuffer,
+                    .descriptorCount = MAX_FRAMES_IN_FLIGHT,
+                },
+                vk::DescriptorPoolSize{
+                    .type = vk::DescriptorType::eCombinedImageSampler,
+                    .descriptorCount = MAX_FRAMES_IN_FLIGHT,
+                },
+            };
+
             vk::DescriptorPoolCreateInfo poolInfo{
                 .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
                 .maxSets = MAX_FRAMES_IN_FLIGHT,
-                .poolSizeCount = 1,
-                .pPoolSizes = &poolSize
+                .poolSizeCount = poolSizes.size(),
+                .pPoolSizes = poolSizes.data()
             };
+
             descriptorPool = vk::raii::DescriptorPool(device, poolInfo);
         }
 
@@ -829,17 +899,31 @@ class Pong {
                     .offset = 0,
                     .range = sizeof(UniformBufferObject)
                 };
-                vk::WriteDescriptorSet descriptorWrite{
-                    .dstSet = descriptorSets[i],
-                    .dstBinding = 0,
-                    .dstArrayElement = 0,
-                    .descriptorCount = 1,
-                    .descriptorType = vk::DescriptorType::eUniformBuffer,
-                    .pBufferInfo = &bufferInfo
+                vk::DescriptorImageInfo imageInfo{
+                    .sampler = textureSampler,
+                    .imageView = textureImageView,
+                    .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
                 };
-                device.updateDescriptorSets(descriptorWrite, {});
+                std::array descriptorWrites{
+                    vk::WriteDescriptorSet{
+                        .dstSet = descriptorSets[i],
+                        .dstBinding = 0,
+                        .dstArrayElement = 0,
+                        .descriptorCount = 1,
+                        .descriptorType = vk::DescriptorType::eUniformBuffer,
+                        .pBufferInfo = &bufferInfo
+                    },
+                    vk::WriteDescriptorSet{
+                        .dstSet = descriptorSets[i],
+                        .dstBinding = 1,
+                        .dstArrayElement = 0,
+                        .descriptorCount = 1,
+                        .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+                        .pImageInfo = &imageInfo
+                    },
+                };
+                device.updateDescriptorSets(descriptorWrites, {});
             }
-
         }
 
         void createCommandBuffers() {
@@ -849,7 +933,7 @@ class Pong {
                 .commandBufferCount = MAX_FRAMES_IN_FLIGHT
             };
 
-            commandBuffers = vk::raii::CommandBuffers(device, allocInfo);
+            frameCommandBuffers = vk::raii::CommandBuffers(device, allocInfo);
         }
 
         void createSyncObjects() {
@@ -866,6 +950,23 @@ class Pong {
         }
 
         // Helper functions
+        vk::raii::ImageView createImageView(vk::Image image, vk::Format format) {
+            vk::ImageViewCreateInfo createInfo{
+                .image = image,
+                .viewType = vk::ImageViewType::e2D,
+                .format = format,
+                .subresourceRange = {
+                    .aspectMask = vk::ImageAspectFlagBits::eColor,
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1
+                }
+            };
+
+            return vk::raii::ImageView(device, createInfo);
+        }
+
         vk::raii::CommandBuffer beginSingleTimeCommands() {
             vk::CommandBufferAllocateInfo allocInfo{
                 .commandPool = commandPool,
@@ -1015,6 +1116,30 @@ class Pong {
             };
 
             commandBuffer.pipelineBarrier2(dependencyInfo);
+        }
+
+        void recordBufferImageCopy(
+            vk::raii::CommandBuffer& commandBuffer,
+            vk::Buffer buffer,
+            vk::Image image,
+            uint32_t width,
+            uint32_t height
+        ) {
+            vk::BufferImageCopy region{
+                .bufferOffset = 0,
+                .bufferRowLength = 0,
+                .bufferImageHeight = 0,
+                .imageSubresource = {
+                    .aspectMask = vk::ImageAspectFlagBits::eColor,
+                    .mipLevel = 0,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1
+                },
+                .imageOffset = { 0, 0, 0 },
+                .imageExtent = { width, height, 1 }
+            };
+
+            commandBuffer.copyBufferToImage(buffer, image, vk::ImageLayout::eTransferDstOptimal, {region});
         }
 
         std::vector<const char*> getRequiredExtentions() {
