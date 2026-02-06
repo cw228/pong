@@ -12,6 +12,9 @@ find_package(glm REQUIRED)
 # stb is header-only, just verify it's installed
 find_path(STB_INCLUDE_DIR stb/stb_image.h REQUIRED)
 
+# tinyobjloader is header-only, just verify it's installed
+find_path(TINYOBJLOADER_INCLUDE_DIR tiny_obj_loader.h REQUIRED)
+
 # Create executable
 add_executable(pong src/main.cpp)
 
@@ -22,7 +25,7 @@ target_link_libraries(pong PRIVATE
     glm::glm
 )
 
-target_include_directories(pong PRIVATE ${STB_INCLUDE_DIR})
+target_include_directories(pong PRIVATE ${STB_INCLUDE_DIR} ${TINYOBJLOADER_INCLUDE_DIR})
 
 # Vulkan-Hpp config (enables designated initializers)
 target_compile_definitions(pong PRIVATE
