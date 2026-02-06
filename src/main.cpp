@@ -9,6 +9,8 @@
 #define GLFW_INCLUDE_VULKAN
 #endif
 #include <GLFW/glfw3.h>
+
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -56,7 +58,7 @@ struct QueueFamilyIndices {
 };
 
 struct Vertex {
-    glm::vec2 position;
+    glm::vec3 position;
     glm::vec3 color;
     glm::vec2 textureCoordinates;
 
@@ -73,7 +75,7 @@ struct Vertex {
             vk::VertexInputAttributeDescription{
                 .location = 0,
                 .binding = 0,
-                .format = vk::Format::eR32G32Sfloat,
+                .format = vk::Format::eR32G32B32Sfloat,
                 .offset = offsetof(Vertex, position)
             },
             vk::VertexInputAttributeDescription{
@@ -100,14 +102,20 @@ struct UniformBufferObject {
 };
 
 const std::vector<Vertex> vertices = {
-    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {2.0f, 0.0f}},
-    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 2.0f}},
-    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {2.0f, 2.0f}},
+    {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+    {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+    {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+    {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
+
+    {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+    {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+    {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+    {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
 };
 
 const std::vector<uint16_t> indices = {
-    0, 1, 2, 2, 3, 0
+    0, 1, 2, 2, 3, 0,
+    4, 5, 6, 6, 7, 4
 };
 
 class Pong {
@@ -168,6 +176,10 @@ class Pong {
         vk::raii::DeviceMemory textureImageMemory = nullptr;
         vk::raii::ImageView textureImageView = nullptr;
         vk::raii::Sampler textureSampler = nullptr;
+        vk::raii::Image depthImage = nullptr;
+        vk::raii::DeviceMemory depthImageMemory = nullptr;
+        vk::raii::ImageView depthImageView = nullptr;
+
         // mk:members
         
         void initWindow() {
@@ -195,6 +207,7 @@ class Pong {
             createDescriptorSetLayout();
             createGraphicsPipeline();
             createCommandPool();
+            createDepthResources();
             createTextureImage();
             createTextureImageView();
             createTextureSampler();
@@ -301,12 +314,26 @@ class Pong {
                 {},
                 vk::AccessFlagBits2::eColorAttachmentWrite,
                 vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-                vk::PipelineStageFlagBits2::eColorAttachmentOutput
+                vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                vk::ImageAspectFlagBits::eColor
+            );
+
+            recordImageLayoutTransition(
+                commandBuffer,
+                depthImage,
+                vk::ImageLayout::eUndefined,
+                vk::ImageLayout::eDepthAttachmentOptimal,
+                vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+                vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+                vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+                vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+                vk::ImageAspectFlagBits::eDepth
             );
 
             vk::ClearValue clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
+            vk::ClearDepthStencilValue clearDepth = vk::ClearDepthStencilValue(1.0f, 0);
 
-            vk::RenderingAttachmentInfo attachmentInfo = {
+            vk::RenderingAttachmentInfo colorAttachmentInfo = {
                 .imageView = swapchainImageViews[imageIndex],
                 .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
                 .loadOp = vk::AttachmentLoadOp::eClear,
@@ -314,11 +341,20 @@ class Pong {
                 .clearValue = clearColor
             };
 
+            vk::RenderingAttachmentInfo depthAttachmentInfo = {
+                .imageView = depthImageView,
+                .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+                .loadOp = vk::AttachmentLoadOp::eClear,
+                .storeOp = vk::AttachmentStoreOp::eDontCare,
+                .clearValue = clearDepth,
+            };
+
             vk::RenderingInfo renderingInfo = {
                 .renderArea = { .offset = { 0, 0 }, .extent = swapchainExtent },
                 .layerCount = 1,
                 .colorAttachmentCount = 1,
-                .pColorAttachments = &attachmentInfo
+                .pColorAttachments = &colorAttachmentInfo,
+                .pDepthAttachment = &depthAttachmentInfo
             };
 
             commandBuffer.beginRendering(renderingInfo);
@@ -354,7 +390,8 @@ class Pong {
                 vk::AccessFlagBits2::eColorAttachmentWrite,
                 {},
                 vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-                vk::PipelineStageFlagBits2::eBottomOfPipe
+                vk::PipelineStageFlagBits2::eBottomOfPipe,
+                vk::ImageAspectFlagBits::eColor
             );
 
             commandBuffer.end();
@@ -555,7 +592,7 @@ class Pong {
             swapchainImageViews.clear();
 
             for (vk::Image image : swapchainImages) {
-                swapchainImageViews.push_back(createImageView(image, swapchainImageFormat));
+                swapchainImageViews.push_back(createImageView(image, swapchainImageFormat, vk::ImageAspectFlagBits::eColor));
             }
         }
 
@@ -669,9 +706,18 @@ class Pong {
 
             pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutInfo);
 
+            vk::PipelineDepthStencilStateCreateInfo depthStencil{
+                .depthTestEnable = vk::True,
+                .depthWriteEnable = vk::True,
+                .depthCompareOp = vk::CompareOp::eLess,
+                .depthBoundsTestEnable = vk::False,
+                .stencilTestEnable = vk::False
+            };
+
             vk::PipelineRenderingCreateInfo pipelineRenderingCreateInfo{
                 .colorAttachmentCount = 1,
                 .pColorAttachmentFormats = &swapchainImageFormat,
+                .depthAttachmentFormat = vk::Format::eD32Sfloat
             };
 
             vk::GraphicsPipelineCreateInfo pipelineInfo{
@@ -683,6 +729,7 @@ class Pong {
                 .pViewportState = &viewportState,
                 .pRasterizationState = &rasterizer,
                 .pMultisampleState = &multisampling,
+                .pDepthStencilState = &depthStencil,
                 .pColorBlendState = &colorBlending,
                 .pDynamicState = &dynamicState,
                 .layout = pipelineLayout,
@@ -699,6 +746,20 @@ class Pong {
             };
 
             commandPool = vk::raii::CommandPool(device, poolInfo);
+        }
+
+        void createDepthResources() {
+            vk::Format depthFormat = vk::Format::eD32Sfloat;
+            createImage(
+                swapchainExtent.width,
+                swapchainExtent.height,
+                depthFormat,
+                vk::ImageUsageFlagBits::eDepthStencilAttachment,
+                vk::MemoryPropertyFlagBits::eDeviceLocal,
+                depthImage,
+                depthImageMemory
+            );
+            depthImageView = createImageView(depthImage, depthFormat, vk::ImageAspectFlagBits::eDepth);
         }
 
         void createTextureImage() {
@@ -744,7 +805,8 @@ class Pong {
                 {},
                 vk::AccessFlagBits2::eTransferWrite,
                 vk::PipelineStageFlagBits2::eTopOfPipe,
-                vk::PipelineStageFlagBits2::eTransfer
+                vk::PipelineStageFlagBits2::eTransfer,
+                vk::ImageAspectFlagBits::eColor
             );
             recordBufferImageCopy(commandBuffer, stagingBuffer, textureImage, texWidth, texHeight);
             recordImageLayoutTransition(
@@ -754,15 +816,15 @@ class Pong {
                 vk::ImageLayout::eShaderReadOnlyOptimal,
                 vk::AccessFlagBits2::eTransferWrite,
                 vk::AccessFlagBits2::eShaderRead,
-                // vk::AccessFlagBits2::eShaderSampledRead,
                 vk::PipelineStageFlagBits2::eTransfer,
-                vk::PipelineStageFlagBits2::eFragmentShader
+                vk::PipelineStageFlagBits2::eFragmentShader,
+                vk::ImageAspectFlagBits::eColor
             );
             endSingleTimeCommands(commandBuffer);
         }
 
         void createTextureImageView() {
-            textureImageView = createImageView(textureImage, vk::Format::eR8G8B8A8Srgb);
+            textureImageView = createImageView(textureImage, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor);
         }
 
         void createTextureSampler() {
@@ -950,13 +1012,13 @@ class Pong {
         }
 
         // Helper functions
-        vk::raii::ImageView createImageView(vk::Image image, vk::Format format) {
+        [[nodiscard]] vk::raii::ImageView createImageView(vk::Image image, vk::Format format, vk::ImageAspectFlagBits aspectMask) {
             vk::ImageViewCreateInfo createInfo{
                 .image = image,
                 .viewType = vk::ImageViewType::e2D,
                 .format = format,
                 .subresourceRange = {
-                    .aspectMask = vk::ImageAspectFlagBits::eColor,
+                    .aspectMask = aspectMask,
                     .baseMipLevel = 0,
                     .levelCount = 1,
                     .baseArrayLayer = 0,
@@ -1088,7 +1150,8 @@ class Pong {
             vk::AccessFlags2 srcAccessMask,
             vk::AccessFlags2 dstAccessMask,
             vk::PipelineStageFlags2 srcStageMask,
-            vk::PipelineStageFlags2 dstStageMask
+            vk::PipelineStageFlags2 dstStageMask,
+            vk::ImageAspectFlagBits imageAspectMask
         ) { 
             vk::ImageMemoryBarrier2 barrier = {
                 .srcStageMask = srcStageMask,
@@ -1101,7 +1164,7 @@ class Pong {
                 .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
                 .image = image,
                 .subresourceRange = {
-                    .aspectMask = vk::ImageAspectFlagBits::eColor,
+                    .aspectMask = imageAspectMask,
                     .baseMipLevel = 0,
                     .levelCount = 1,
                     .baseArrayLayer = 0,

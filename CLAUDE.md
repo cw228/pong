@@ -65,6 +65,20 @@ Uses `MAX_FRAMES_IN_FLIGHT = 2` with the following sync objects:
 
 **Init-time GPU uploads:** `device.waitIdle()` in `endSingleTimeCommands()` is fine for init-time staging uploads (textures, vertex/index buffers). For runtime uploads, replace with a fence on the specific submit.
 
+**Barrier source/destination masks:** A barrier has four synchronization components:
+- Source stage: what must finish *executing*
+- Source access: what writes must be *flushed from cache* (availability — data leaves the writer's private cache into shared memory)
+- Dest stage: what must *wait* before executing
+- Dest access: what caches must be *invalidated* so reads see the flushed data (visibility — reader's stale cache entries are discarded)
+
+Availability (flush) is the expensive part and only needs to happen once. Visibility (invalidation) is cheap and done per-consumer. Access flags map to hardware caches (e.g., `eColorAttachmentWrite` → ROP cache, `eShaderSampledRead` → texture unit cache), not to pipeline stages — that's why you specify both stage and access type.
+
+**Image layout transitions and content preservation:** Any source layout other than `eUndefined` implicitly means "preserve the contents" — the driver uses the source layout to know how the data is currently arranged so it can convert it. `eUndefined` means "I'm not telling you the current layout," so the driver *can't* preserve the data and may discard it. Specifying the wrong source layout (not matching the image's actual current layout) is undefined behavior — the driver trusts you, and validation layers track this.
+
+**Depth image uses a single buffer** (not one per frame in flight) because the pipeline barrier before each frame's depth writes synchronizes against prior depth writes on the same queue. This serializes the depth-related work between frames while allowing other stages (vertex processing, color writes) to overlap. Combined with `eUndefined` source layout + `loadOp::eClear` + `storeOp::eDontCare`, the depth buffer is purely transient within each frame.
+
+**Image initial layouts:** Images are created with `initialLayout` which can only be `eUndefined` or `ePrelinear`. Almost always use `eUndefined` — `ePrelinear` is only for CPU-mapped linearly-tiled images. The first layout transition for most images will therefore have `eUndefined` as the source.
+
 ## Wayland/Hyprland Notes
 
 - Window won't appear until content is rendered (unlike X11)
@@ -100,6 +114,8 @@ Uses `MAX_FRAMES_IN_FLIGHT = 2` with the following sync objects:
 ## Shader Notes
 
 **MVP matrix order:** In Slang/HLSL, transformations apply right-to-left. Use `mul(projection, mul(view, mul(model, position)))` to get the correct `projection * view * model * position` order.
+
+**Depth values:** The vertex shader outputs clip-space `z` via `SV_Position`. Fixed-function hardware then does perspective division (`z / w`) to get NDC depth [0, 1] (Vulkan range, unlike OpenGL's [-1, 1]), then the viewport transform maps it to framebuffer depth: `depth = minDepth + ndc.z * (maxDepth - minDepth)`. No shader code needed for depth — the projection matrix encodes the z mapping.
 
 ## Troubleshooting
 
