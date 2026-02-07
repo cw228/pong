@@ -3,6 +3,7 @@ project(pong LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 # Find required packages
 find_package(Vulkan REQUIRED)
@@ -16,7 +17,7 @@ find_path(STB_INCLUDE_DIR stb/stb_image.h REQUIRED)
 find_path(TINYOBJLOADER_INCLUDE_DIR tiny_obj_loader.h REQUIRED)
 
 # Create executable
-add_executable(pong src/main.cpp)
+add_executable(pong src/main.cpp src/libs.cpp)
 
 # Link libraries
 target_link_libraries(pong PRIVATE
@@ -31,12 +32,17 @@ target_include_directories(pong PRIVATE ${STB_INCLUDE_DIR} ${TINYOBJLOADER_INCLU
 target_compile_definitions(pong PRIVATE
     VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
     GLFW_INCLUDE_VULKAN
+    GLM_FORCE_DEPTH_ZERO_TO_ONE
+    GLM_ENABLE_EXPERIMENTAL
 )
 
 # Precompile heavy headers
 target_precompile_headers(pong PRIVATE
     <vulkan/vulkan_raii.hpp>
     <GLFW/glfw3.h>
+    <glm/glm.hpp>
+    <glm/gtc/matrix_transform.hpp>
+    <glm/gtx/hash.hpp>
 )
 
 # Find slangc compiler (included in Vulkan SDK 1.3.296.0+)

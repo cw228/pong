@@ -4,20 +4,25 @@
 #include <print>
 #include <fstream>
 #include <chrono>
+#include <unordered_map>
 
 #ifndef GLFW_INCLUDE_VULKAN
 #define GLFW_INCLUDE_VULKAN
 #endif
 #include <GLFW/glfw3.h>
 
+#ifndef GLM_FORCE_DEPTH_ZERO_TO_ONE
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#endif
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb/stb_image.h>
+#ifndef GLM_ENABLE_EXPERIMENTAL
+#define GLM_ENABLE_EXPERIMENTAL
+#endif
+#include <glm/gtx/hash.hpp>
 
-#define TINYOBJLOADER_IMPLEMENTATION
+#include <stb/stb_image.h>
 #include <tiny_obj_loader.h>
 
 #ifndef VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
@@ -97,7 +102,22 @@ struct Vertex {
             },
         };
     }
+
+    bool operator==(const Vertex& other) const {
+        return position == other.position && color == other.color && textureCoordinates == other.textureCoordinates;
+    }
 };
+
+namespace std {
+    template<> struct hash<Vertex> {
+        size_t operator()(Vertex const& vertex) const {
+            return ((hash<glm::vec3>()(vertex.position) ^ 
+                   (hash<glm::vec3>()(vertex.color) << 1)) >> 1) ^ 
+                   (hash<glm::vec2>()(vertex.textureCoordinates) << 1);
+        }
+    };
+}
+
 
 // Explicit alignment for shader 
 struct UniformBufferObject {
@@ -186,6 +206,7 @@ class Pong {
         vk::raii::Image depthImage = nullptr;
         vk::raii::DeviceMemory depthImageMemory = nullptr;
         vk::raii::ImageView depthImageView = nullptr;
+        uint32_t mipLevels;
         // mk:members
         
         void initWindow() {
@@ -322,7 +343,8 @@ class Pong {
                 vk::AccessFlagBits2::eColorAttachmentWrite,
                 vk::PipelineStageFlagBits2::eColorAttachmentOutput,
                 vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-                vk::ImageAspectFlagBits::eColor
+                vk::ImageAspectFlagBits::eColor,
+                1
             );
 
             recordImageLayoutTransition(
@@ -334,7 +356,8 @@ class Pong {
                 vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
                 vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
                 vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-                vk::ImageAspectFlagBits::eDepth
+                vk::ImageAspectFlagBits::eDepth,
+                1
             );
 
             vk::ClearValue clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
@@ -398,7 +421,8 @@ class Pong {
                 {},
                 vk::PipelineStageFlagBits2::eColorAttachmentOutput,
                 vk::PipelineStageFlagBits2::eBottomOfPipe,
-                vk::ImageAspectFlagBits::eColor
+                vk::ImageAspectFlagBits::eColor,
+                1
             );
 
             commandBuffer.end();
@@ -600,7 +624,7 @@ class Pong {
             swapchainImageViews.clear();
 
             for (vk::Image image : swapchainImages) {
-                swapchainImageViews.push_back(createImageView(image, swapchainImageFormat, vk::ImageAspectFlagBits::eColor));
+                swapchainImageViews.push_back(createImageView(image, swapchainImageFormat, vk::ImageAspectFlagBits::eColor, 1));
             }
         }
 
@@ -761,13 +785,14 @@ class Pong {
             createImage(
                 swapchainExtent.width,
                 swapchainExtent.height,
+                1,
                 depthFormat,
                 vk::ImageUsageFlagBits::eDepthStencilAttachment,
                 vk::MemoryPropertyFlagBits::eDeviceLocal,
                 depthImage,
                 depthImageMemory
             );
-            depthImageView = createImageView(depthImage, depthFormat, vk::ImageAspectFlagBits::eDepth);
+            depthImageView = createImageView(depthImage, depthFormat, vk::ImageAspectFlagBits::eDepth, 1);
         }
 
         void createTextureImage() {
@@ -778,6 +803,8 @@ class Pong {
             if (!pixels) {
                 throw std::runtime_error("failed to load texture image!");
             }
+
+            mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1;
 
             vk::raii::Buffer stagingBuffer = nullptr;
             vk::raii::DeviceMemory stagingBufferMemory = nullptr;
@@ -796,9 +823,11 @@ class Pong {
             stbi_image_free(pixels);
 
             createImage(
-                texWidth, texHeight, 
+                texWidth, 
+                texHeight,
+                mipLevels,
                 vk::Format::eR8G8B8A8Srgb,
-                vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled, 
+                vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled, 
                 vk::MemoryPropertyFlagBits::eDeviceLocal,
                 textureImage,
                 textureImageMemory
@@ -814,25 +843,29 @@ class Pong {
                 vk::AccessFlagBits2::eTransferWrite,
                 vk::PipelineStageFlagBits2::eTopOfPipe,
                 vk::PipelineStageFlagBits2::eTransfer,
-                vk::ImageAspectFlagBits::eColor
+                vk::ImageAspectFlagBits::eColor,
+                mipLevels
             );
             recordBufferImageCopy(commandBuffer, stagingBuffer, textureImage, texWidth, texHeight);
-            recordImageLayoutTransition(
-                commandBuffer,
-                textureImage,
-                vk::ImageLayout::eTransferDstOptimal,
-                vk::ImageLayout::eShaderReadOnlyOptimal,
-                vk::AccessFlagBits2::eTransferWrite,
-                vk::AccessFlagBits2::eShaderRead,
-                vk::PipelineStageFlagBits2::eTransfer,
-                vk::PipelineStageFlagBits2::eFragmentShader,
-                vk::ImageAspectFlagBits::eColor
-            );
+
+            // recordImageLayoutTransition(
+            //     commandBuffer,
+            //     textureImage,
+            //     vk::ImageLayout::eTransferDstOptimal,
+            //     vk::ImageLayout::eShaderReadOnlyOptimal,
+            //     vk::AccessFlagBits2::eTransferWrite,
+            //     vk::AccessFlagBits2::eShaderRead,
+            //     vk::PipelineStageFlagBits2::eTransfer,
+            //     vk::PipelineStageFlagBits2::eFragmentShader,
+            //     vk::ImageAspectFlagBits::eColor,
+            //     mipLevels
+            // );
+
             endSingleTimeCommands(commandBuffer);
         }
 
         void createTextureImageView() {
-            textureImageView = createImageView(textureImage, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor);
+            textureImageView = createImageView(textureImage, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor, mipLevels);
         }
 
         void createTextureSampler() {
@@ -867,6 +900,8 @@ class Pong {
                 throw std::runtime_error(warn + err);
             }
 
+            std::unordered_map<Vertex, uint32_t> uniqueVertices{};
+
             for (const auto& shape : shapes) {
                 for (const auto& index : shape.mesh.indices) {
                     Vertex vertex{};
@@ -884,13 +919,19 @@ class Pong {
 
                     vertex.color = {1.0f, 1.0f, 1.0f};
 
-                    vertices.push_back(vertex);
-                    indices.push_back(indices.size());
+                    if (uniqueVertices.count(vertex) == 0) {
+                        uniqueVertices[vertex] = static_cast<uint32_t>(vertices.size());
+                        vertices.push_back(vertex);
+                    }
+
+                    indices.push_back(uniqueVertices[vertex]);
                 }
             }
         }
 
         void createVertexBuffer() {
+            std::println("{}", vertices.size());
+
             vk::DeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
 
             createBuffer(
@@ -1053,7 +1094,45 @@ class Pong {
         }
 
         // Helper functions
-        [[nodiscard]] vk::raii::ImageView createImageView(vk::Image image, vk::Format format, vk::ImageAspectFlagBits aspectMask) {
+        void generateMipmaps(vk::raii::Image& image, vk::Format imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels) {
+            vk::raii::CommandBuffer commandBuffer = beginSingleTimeCommands();
+
+            vk::ImageMemoryBarrier2 barrier = {
+                .srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
+                .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
+                .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
+                .dstAccessMask = vk::AccessFlagBits2::eTransferRead,
+                .oldLayout = vk::ImageLayout::eTransferDstOptimal,
+                .newLayout = vk::ImageLayout::eTransferSrcOptimal,
+                .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+                .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+                .image = image,
+                .subresourceRange = {
+                    .aspectMask = vk::ImageAspectFlagBits::eColor,
+                    // .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1
+                }
+            };
+
+            vk::DependencyInfo dependencyInfo = {
+                .dependencyFlags = {},
+                .imageMemoryBarrierCount = 1,
+                .pImageMemoryBarriers = &barrier
+            };
+
+
+            int32_t mipWidth = texWidth;
+            int32_t mipHeight = texHeight;
+
+            for (uint32_t i = 1; i < mipLevels; i++) {
+                barrier.subresourceRange.baseMipLevel = i - 1;
+                commandBuffer.pipelineBarrier2(dependencyInfo);
+            }
+        }
+
+        [[nodiscard]] vk::raii::ImageView createImageView(vk::Image image, vk::Format format, vk::ImageAspectFlagBits aspectMask, uint32_t mipLevels) {
             vk::ImageViewCreateInfo createInfo{
                 .image = image,
                 .viewType = vk::ImageViewType::e2D,
@@ -1061,7 +1140,7 @@ class Pong {
                 .subresourceRange = {
                     .aspectMask = aspectMask,
                     .baseMipLevel = 0,
-                    .levelCount = 1,
+                    .levelCount = mipLevels,
                     .baseArrayLayer = 0,
                     .layerCount = 1
                 }
@@ -1100,6 +1179,7 @@ class Pong {
         void createImage(
             uint32_t width, 
             uint32_t height, 
+            uint32_t mipLevels,
             vk::Format format, 
             vk::ImageUsageFlags usage, 
             vk::MemoryPropertyFlags properties, 
@@ -1110,7 +1190,7 @@ class Pong {
                 .imageType = vk::ImageType::e2D,
                 .format = format,
                 .extent = { width, height, 1 },
-                .mipLevels = 1,
+                .mipLevels = mipLevels,
                 .arrayLayers = 1,
                 .samples = vk::SampleCountFlagBits::e1,
                 .tiling = vk::ImageTiling::eOptimal,
@@ -1192,7 +1272,8 @@ class Pong {
             vk::AccessFlags2 dstAccessMask,
             vk::PipelineStageFlags2 srcStageMask,
             vk::PipelineStageFlags2 dstStageMask,
-            vk::ImageAspectFlagBits imageAspectMask
+            vk::ImageAspectFlagBits imageAspectMask,
+            uint32_t mipLevels
         ) { 
             vk::ImageMemoryBarrier2 barrier = {
                 .srcStageMask = srcStageMask,
@@ -1207,7 +1288,7 @@ class Pong {
                 .subresourceRange = {
                     .aspectMask = imageAspectMask,
                     .baseMipLevel = 0,
-                    .levelCount = 1,
+                    .levelCount = mipLevels,
                     .baseArrayLayer = 0,
                     .layerCount = 1
                 }
@@ -1404,3 +1485,4 @@ int main() {
 
     return EXIT_SUCCESS;
 }
+
