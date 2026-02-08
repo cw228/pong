@@ -822,11 +822,13 @@ class Pong {
             stagingBufferMemory.unmapMemory();
             stbi_image_free(pixels);
 
+            vk::Format textureImageFormat = vk::Format::eR8G8B8A8Srgb;
+
             createImage(
                 texWidth, 
                 texHeight,
                 mipLevels,
-                vk::Format::eR8G8B8A8Srgb,
+                textureImageFormat,
                 vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled, 
                 vk::MemoryPropertyFlagBits::eDeviceLocal,
                 textureImage,
@@ -847,20 +849,7 @@ class Pong {
                 mipLevels
             );
             recordBufferImageCopy(commandBuffer, stagingBuffer, textureImage, texWidth, texHeight);
-
-            // recordImageLayoutTransition(
-            //     commandBuffer,
-            //     textureImage,
-            //     vk::ImageLayout::eTransferDstOptimal,
-            //     vk::ImageLayout::eShaderReadOnlyOptimal,
-            //     vk::AccessFlagBits2::eTransferWrite,
-            //     vk::AccessFlagBits2::eShaderRead,
-            //     vk::PipelineStageFlagBits2::eTransfer,
-            //     vk::PipelineStageFlagBits2::eFragmentShader,
-            //     vk::ImageAspectFlagBits::eColor,
-            //     mipLevels
-            // );
-
+            recordMipmapBlits(commandBuffer, textureImage, textureImageFormat, texWidth, texHeight, mipLevels);
             endSingleTimeCommands(commandBuffer);
         }
 
@@ -1094,22 +1083,21 @@ class Pong {
         }
 
         // Helper functions
-        void generateMipmaps(vk::raii::Image& image, vk::Format imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels) {
-            vk::raii::CommandBuffer commandBuffer = beginSingleTimeCommands();
-
+        void recordMipmapBlits(
+            vk::raii::CommandBuffer& commandBuffer,
+            vk::raii::Image& image, 
+            vk::Format imageFormat, 
+            int32_t texWidth, 
+            int32_t texHeight, uint32_t 
+            mipLevels
+        ) {
+            // Partial barrier to be used multiple times
             vk::ImageMemoryBarrier2 barrier = {
-                .srcStageMask = vk::PipelineStageFlagBits2::eTransfer,
-                .srcAccessMask = vk::AccessFlagBits2::eTransferWrite,
-                .dstStageMask = vk::PipelineStageFlagBits2::eTransfer,
-                .dstAccessMask = vk::AccessFlagBits2::eTransferRead,
-                .oldLayout = vk::ImageLayout::eTransferDstOptimal,
-                .newLayout = vk::ImageLayout::eTransferSrcOptimal,
                 .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
                 .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
                 .image = image,
                 .subresourceRange = {
                     .aspectMask = vk::ImageAspectFlagBits::eColor,
-                    // .baseMipLevel = 0,
                     .levelCount = 1,
                     .baseArrayLayer = 0,
                     .layerCount = 1
@@ -1122,14 +1110,84 @@ class Pong {
                 .pImageMemoryBarriers = &barrier
             };
 
-
             int32_t mipWidth = texWidth;
             int32_t mipHeight = texHeight;
 
             for (uint32_t i = 1; i < mipLevels; i++) {
+                int32_t nextMipWidth = mipWidth > 1 ? mipWidth/2 : 1;
+                int32_t nextMipHeight = mipHeight > 1 ? mipHeight/2 : 1;
+
+                // First barrier transitions mipLevel eTransferDstOptimal->eTransferSrcOptimal, 
+                // and waits on write from buffer copy (first iteration) or previous blit
+                barrier.srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
+                barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
+                barrier.dstStageMask = vk::PipelineStageFlagBits2::eTransfer;
+                barrier.dstAccessMask = vk::AccessFlagBits2::eTransferRead;
+                barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
+                barrier.newLayout = vk::ImageLayout::eTransferSrcOptimal;
                 barrier.subresourceRange.baseMipLevel = i - 1;
                 commandBuffer.pipelineBarrier2(dependencyInfo);
+
+                vk::ArrayWrapper1D<vk::Offset3D, 2> offsets, dstOffsets;
+                offsets[0] = vk::Offset3D(0, 0, 0);
+                offsets[1] = vk::Offset3D(mipWidth, mipHeight, 1);
+                dstOffsets[0] = vk::Offset3D(0, 0, 0);
+                dstOffsets[1] = vk::Offset3D(nextMipWidth, nextMipHeight, 1);
+
+                vk::ImageSubresourceLayers srcSubresource{
+                    .aspectMask = vk::ImageAspectFlagBits::eColor,
+                    .mipLevel = i - 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1
+                };
+
+                vk::ImageSubresourceLayers dstSubresource{
+                    .aspectMask = vk::ImageAspectFlagBits::eColor,
+                    .mipLevel = i,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1
+                };
+
+                vk::ImageBlit blit{
+                    .srcSubresource = srcSubresource,
+                    .srcOffsets = offsets,
+                    .dstSubresource = dstSubresource,
+                    .dstOffsets = dstOffsets
+                };
+
+                commandBuffer.blitImage(
+                    image, vk::ImageLayout::eTransferSrcOptimal,
+                    image, vk::ImageLayout::eTransferDstOptimal,
+                    { blit }, vk::Filter::eLinear
+                );
+
+                // Second barrier transitions mipLevel to eShaderReadOnlyOptimal, and waits on
+                // reads from the blit to finish
+                barrier.srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
+                barrier.srcAccessMask = vk::AccessFlagBits2::eTransferRead;
+                barrier.dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader;
+                barrier.dstAccessMask = vk::AccessFlagBits2::eShaderRead;
+                barrier.oldLayout = vk::ImageLayout::eTransferSrcOptimal;
+                barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+
+                commandBuffer.pipelineBarrier2(dependencyInfo);
+
+                mipWidth = nextMipWidth;
+                mipHeight = nextMipHeight;
             }
+
+            // Finally, transition the last mipLevel from eTransferDstOptimal->eShaderReadOnlyOptimal.
+            // It was never transitioned to src because we didn't need to read from it. Wait on the 
+            // writes from the blit.
+            barrier.subresourceRange.baseMipLevel = mipLevels - 1;
+            barrier.srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
+            barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
+            barrier.dstStageMask = vk::PipelineStageFlagBits2::eFragmentShader;
+            barrier.dstAccessMask = vk::AccessFlagBits2::eShaderRead;
+            barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
+            barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+
+            commandBuffer.pipelineBarrier2(dependencyInfo);
         }
 
         [[nodiscard]] vk::raii::ImageView createImageView(vk::Image image, vk::Format format, vk::ImageAspectFlagBits aspectMask, uint32_t mipLevels) {

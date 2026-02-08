@@ -79,6 +79,8 @@ Availability (flush) is the expensive part and only needs to happen once. Visibi
 
 **Image initial layouts:** Images are created with `initialLayout` which can only be `eUndefined` or `ePrelinear`. Almost always use `eUndefined` — `ePrelinear` is only for CPU-mapped linearly-tiled images. The first layout transition for most images will therefore have `eUndefined` as the source.
 
+**Semaphores carry implicit memory dependencies:** A semaphore signal makes all available memory visible after the corresponding wait. This is why the present-transition barrier can have empty destination access/stage — the barrier flushes color writes (availability), and the `renderFinishedSemaphore` between submit and `presentKHR` handles visibility to the presentation engine. Chain: barrier flushes → semaphore signal picks up available data → semaphore wait makes it visible.
+
 ## Wayland/Hyprland Notes
 
 - Window won't appear until content is rendered (unlike X11)
