@@ -111,11 +111,23 @@ Availability (flush) is the expensive part and only needs to happen once. Visibi
 
 **RAII wrappers and containers:** RAII wrappers are non-copyable. When adding to a `std::vector`, either use `std::move(obj)` with `push_back`, or pass the factory function return value directly (it's already an rvalue): `vec.push_back(createThing(...))`.
 
+**Vulkan-Hpp struct pointer semantics:** Structs like `vk::DependencyInfo`, `vk::RenderingInfo`, etc. store raw pointers (`pImageMemoryBarriers`, etc.), not copies. Mutating the pointed-to data and resubmitting the parent struct works without recreating it — useful for reusing a barrier in a loop (e.g., mipmap generation).
+
 **Descriptor pool sizing:** `maxSets` and `pPoolSizes` are independent limits — `maxSets` caps total descriptor sets allocated, `pPoolSizes` caps total descriptors per type. Both must be satisfied for allocation to succeed.
+
+## Multisampling (MSAA)
+
+**Depth must be multisampled at the same rate as color.** Each color sample needs its own depth value for an independent depth test. With single-sampled depth, the depth test is per-pixel (pass/fail for all samples), so draw order affects correctness — a closer triangle drawn first would cause a farther triangle to be entirely discarded, leaving uncovered samples as background instead of showing the farther triangle. Per-sample depth eliminates draw-order dependence.
+
+**`getMaxUsableSampleCount`:** `vk::SampleCountFlags` is a bitmask where bit N = 2^N samples. Casting to `uint32_t` and using `std::bit_floor` (C++20, `<bit>`) finds the highest supported power-of-2 sample count. Intersect `framebufferColorSampleCounts & framebufferDepthSampleCounts` to ensure both attachments support the chosen count.
+
+**Depth resolve:** MSAA resolve only operates on color — it averages color samples into the single-sample framebuffer. Per-sample depth values are discarded (hence `storeOp::eDontCare` on the depth attachment). Averaging depth values would be meaningless.
 
 ## Shader Notes
 
 **MVP matrix order:** In Slang/HLSL, transformations apply right-to-left. Use `mul(projection, mul(view, mul(model, position)))` to get the correct `projection * view * model * position` order.
+
+**LOD (Level of Detail):** LOD 0 = mip level 0 = full-resolution base image. Higher LOD selects higher mip levels (smaller, less detailed). `minLod = 0.0f` and `maxLod = LodClampNone` allows the sampler to use the full mip range.
 
 **Depth values:** The vertex shader outputs clip-space `z` via `SV_Position`. Fixed-function hardware then does perspective division (`z / w`) to get NDC depth [0, 1] (Vulkan range, unlike OpenGL's [-1, 1]), then the viewport transform maps it to framebuffer depth: `depth = minDepth + ndc.z * (maxDepth - minDepth)`. No shader code needed for depth — the projection matrix encodes the z mapping.
 

@@ -5,6 +5,7 @@
 #include <fstream>
 #include <chrono>
 #include <unordered_map>
+#include <bit>
 
 #ifndef GLFW_INCLUDE_VULKAN
 #define GLFW_INCLUDE_VULKAN
@@ -206,7 +207,11 @@ class Pong {
         vk::raii::Image depthImage = nullptr;
         vk::raii::DeviceMemory depthImageMemory = nullptr;
         vk::raii::ImageView depthImageView = nullptr;
+        vk::raii::Image colorImage = nullptr;
+        vk::raii::DeviceMemory colorImageMemory = nullptr;
+        vk::raii::ImageView colorImageView = nullptr;
         uint32_t mipLevels;
+        vk::SampleCountFlagBits msaaSamples = vk::SampleCountFlagBits::e1;
         // mk:members
         
         void initWindow() {
@@ -234,6 +239,7 @@ class Pong {
             createDescriptorSetLayout();
             createGraphicsPipeline();
             createCommandPool();
+            createColorResources();
             createDepthResources();
             createTextureImage();
             createTextureImageView();
@@ -349,6 +355,19 @@ class Pong {
 
             recordImageLayoutTransition(
                 commandBuffer,
+                colorImage,
+                vk::ImageLayout::eUndefined,
+                vk::ImageLayout::eColorAttachmentOptimal,
+                {},
+                vk::AccessFlagBits2::eColorAttachmentWrite,
+                vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                vk::ImageAspectFlagBits::eColor,
+                1
+            );
+
+            recordImageLayoutTransition(
+                commandBuffer,
                 depthImage,
                 vk::ImageLayout::eUndefined,
                 vk::ImageLayout::eDepthAttachmentOptimal,
@@ -364,10 +383,14 @@ class Pong {
             vk::ClearDepthStencilValue clearDepth = vk::ClearDepthStencilValue(1.0f, 0);
 
             vk::RenderingAttachmentInfo colorAttachmentInfo = {
-                .imageView = swapchainImageViews[imageIndex],
+                .imageView = colorImageView,
                 .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+                .resolveMode = vk::ResolveModeFlagBits::eAverage,
+                .resolveImageView = swapchainImageViews[imageIndex],
+                .resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+                // load/store ops are for primary image (multisample) - resolved image is stored implicitly
                 .loadOp = vk::AttachmentLoadOp::eClear,
-                .storeOp = vk::AttachmentStoreOp::eStore,
+                .storeOp = vk::AttachmentStoreOp::eDontCare,
                 .clearValue = clearColor
             };
 
@@ -478,6 +501,7 @@ class Pong {
                 vk::PhysicalDeviceProperties deviceProperties = device.getProperties();
                 const char* name = deviceProperties.deviceName.data();
                 physicalDevice = device;
+                msaaSamples = getMaxSampleCount();
                 return;
 
                 // vk::PhysicalDeviceFeatures deviceFeatures = device.getFeatures();
@@ -616,6 +640,7 @@ class Pong {
             // Recreate
             createSwapchain();
             createSwapchainImageViews();
+            createColorResources();
             createDepthResources();
             createSyncObjects();
         }
@@ -714,7 +739,7 @@ class Pong {
             };
 
             vk::PipelineMultisampleStateCreateInfo multisampling{
-                .rasterizationSamples = vk::SampleCountFlagBits::e1,
+                .rasterizationSamples = msaaSamples,
                 .sampleShadingEnable = vk::False
             };
 
@@ -780,12 +805,28 @@ class Pong {
             commandPool = vk::raii::CommandPool(device, poolInfo);
         }
 
+        void createColorResources() {
+            createImage(
+                swapchainExtent.width, 
+                swapchainExtent.height, 
+                1, 
+                msaaSamples,
+                swapchainImageFormat,
+                vk::ImageUsageFlagBits::eColorAttachment,
+                vk::MemoryPropertyFlagBits::eDeviceLocal,
+                colorImage,
+                colorImageMemory
+            );
+            colorImageView = createImageView(colorImage, swapchainImageFormat, vk::ImageAspectFlagBits::eColor, 1);
+        }
+
         void createDepthResources() {
             vk::Format depthFormat = vk::Format::eD32Sfloat;
             createImage(
                 swapchainExtent.width,
                 swapchainExtent.height,
                 1,
+                msaaSamples,
                 depthFormat,
                 vk::ImageUsageFlagBits::eDepthStencilAttachment,
                 vk::MemoryPropertyFlagBits::eDeviceLocal,
@@ -828,6 +869,7 @@ class Pong {
                 texWidth, 
                 texHeight,
                 mipLevels,
+                vk::SampleCountFlagBits::e1,
                 textureImageFormat,
                 vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled, 
                 vk::MemoryPropertyFlagBits::eDeviceLocal,
@@ -872,7 +914,7 @@ class Pong {
                 .compareEnable = vk::False,
                 .compareOp = vk::CompareOp::eAlways,
                 .minLod = 0.0f,
-                .maxLod = 0.0f,
+                .maxLod = vk::LodClampNone,
                 .borderColor = vk::BorderColor::eIntOpaqueBlack,
                 .unnormalizedCoordinates = vk::False
             };
@@ -919,8 +961,6 @@ class Pong {
         }
 
         void createVertexBuffer() {
-            std::println("{}", vertices.size());
-
             vk::DeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
 
             createBuffer(
@@ -1083,6 +1123,12 @@ class Pong {
         }
 
         // Helper functions
+        vk::SampleCountFlagBits getMaxSampleCount() {
+            vk::PhysicalDeviceProperties props = physicalDevice.getProperties();
+            vk::SampleCountFlags counts = props.limits.framebufferColorSampleCounts & props.limits.framebufferDepthSampleCounts;
+            return static_cast<vk::SampleCountFlagBits>(std::bit_floor(static_cast<uint32_t>(counts))); 
+        }
+
         void recordMipmapBlits(
             vk::raii::CommandBuffer& commandBuffer,
             vk::raii::Image& image, 
@@ -1091,6 +1137,11 @@ class Pong {
             int32_t texHeight, uint32_t 
             mipLevels
         ) {
+            vk::FormatProperties formatProperties = physicalDevice.getFormatProperties(imageFormat);
+            if (!(vk::FormatFeatureFlagBits::eSampledImageFilterLinear & formatProperties.optimalTilingFeatures)) {
+                throw std::runtime_error("texture image format does not support linear blitting");
+            }
+
             // Partial barrier to be used multiple times
             vk::ImageMemoryBarrier2 barrier = {
                 .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
@@ -1238,6 +1289,7 @@ class Pong {
             uint32_t width, 
             uint32_t height, 
             uint32_t mipLevels,
+            vk::SampleCountFlagBits numSamples,
             vk::Format format, 
             vk::ImageUsageFlags usage, 
             vk::MemoryPropertyFlags properties, 
@@ -1250,7 +1302,7 @@ class Pong {
                 .extent = { width, height, 1 },
                 .mipLevels = mipLevels,
                 .arrayLayers = 1,
-                .samples = vk::SampleCountFlagBits::e1,
+                .samples = numSamples,
                 .tiling = vk::ImageTiling::eOptimal,
                 .usage = usage,
                 .sharingMode = vk::SharingMode::eExclusive,
