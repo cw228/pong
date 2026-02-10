@@ -6,6 +6,7 @@
 #include <chrono>
 #include <unordered_map>
 #include <bit>
+#include <random>
 
 #ifndef GLFW_INCLUDE_VULKAN
 #define GLFW_INCLUDE_VULKAN
@@ -37,6 +38,7 @@ constexpr uint32_t HEIGHT = 600;
 constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 const std::string MODEL_PATH = "models/viking_room.obj";
 const std::string TEXTURE_PATH = "textures/viking_room.png";
+constexpr uint32_t PARTICLE_COUNT = 500;
 
 const std::vector<const char*> validationLayers = {
     "VK_LAYER_KHRONOS_validation"
@@ -66,6 +68,7 @@ struct Window {
 struct QueueFamilyIndices {
     uint32_t graphicsIndex;
     uint32_t presentationIndex;
+    uint32_t computeIndex;
 };
 
 struct Vertex {
@@ -127,6 +130,12 @@ struct UniformBufferObject {
     alignas(16) glm::mat4 projection;
 };
 
+struct Particle {
+    glm::vec2 position;
+    glm::vec2 velocity;
+    glm::vec4 color;
+};
+
 // const std::vector<Vertex> vertices = {
 //     {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
 //     {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
@@ -162,6 +171,7 @@ class Pong {
         vk::raii::Device device = nullptr;
         vk::raii::Queue graphicsQueue = nullptr;
         vk::raii::Queue presentQueue = nullptr;
+        vk::raii::Queue computeQueue = nullptr;
         vk::PhysicalDeviceFeatures deviceFeatures;
         std::vector<const char*> deviceExtensions = {
             vk::KHRSwapchainExtensionName,
@@ -212,6 +222,8 @@ class Pong {
         vk::raii::ImageView colorImageView = nullptr;
         uint32_t mipLevels;
         vk::SampleCountFlagBits msaaSamples = vk::SampleCountFlagBits::e1;
+        std::vector<vk::raii::Buffer> shaderStorageBuffers;
+        std::vector<vk::raii::DeviceMemory> shaderStorageBuffersMemory;
         // mk:members
         
         void initWindow() {
@@ -522,23 +534,39 @@ class Pong {
             std::vector<vk::QueueFamilyProperties> queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
             bool graphicsIndexSet = false;
             bool presentationIndexSet = false;
+            bool computeIndexSet = false;
+
+            // for (uint32_t i = 0; i < queueFamilyProperties.size(); ++i) {
+            //     vk::QueueFlags graphics = queueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eGraphics;
+            //     vk::QueueFlags compute = queueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eCompute;
+            //     std::println("{} {}", static_cast<uint32_t>(graphics), static_cast<uint32_t>(compute));
+            // }
 
             for (uint32_t i = 0; i < queueFamilyProperties.size(); ++i) {
                 if (queueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eGraphics) {
                     queueFamilyIndices.graphicsIndex = i;
                     graphicsIndexSet = true;
                 }
+
                 VkBool32 presentSupport = physicalDevice.getSurfaceSupportKHR(i, *surface);
                 if (presentSupport) {
                     queueFamilyIndices.presentationIndex = i;
                     presentationIndexSet = true;
                 }
-                if (graphicsIndexSet && presentationIndexSet) {
+
+                if (queueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eCompute) {
+                    queueFamilyIndices.computeIndex = i;
+                    computeIndexSet = true;
+                }
+
+                std::println("g p c: {} {} {}", queueFamilyIndices.graphicsIndex, queueFamilyIndices.presentationIndex, queueFamilyIndices.computeIndex);
+
+                if (graphicsIndexSet && presentationIndexSet && computeIndexSet) {
                     return;
                 }
             }
             
-            throw std::runtime_error("failed to find queue family that supports graphics");
+            throw std::runtime_error("failed to find queue families");
         }
 
         void createLogicalDevice() {
@@ -575,6 +603,7 @@ class Pong {
         void getQueues() {
             graphicsQueue = device.getQueue(queueFamilyIndices.graphicsIndex, 0);
             presentQueue = device.getQueue(queueFamilyIndices.presentationIndex, 0);
+            computeQueue = device.getQueue(queueFamilyIndices.computeIndex, 0);
         }
 
         void createSwapchain() {
@@ -683,6 +712,9 @@ class Pong {
 
             std::vector<char> fragShaderCode = readFile("build/shaders/shader_fragMain.spv");
             vk::raii::ShaderModule fragShaderModule = createShaderModule(fragShaderCode);
+
+            std::vector<char> compShaderCode = readFile("build/shaders/shader_fragMain.spv");
+            vk::raii::ShaderModule compShaderModule = createShaderModule(compShaderCode);
             
             vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
                 .stage = vk::ShaderStageFlagBits::eVertex,
@@ -696,7 +728,13 @@ class Pong {
                 .pName = "fragMain"
             };
 
-            vk::PipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
+            vk::PipelineShaderStageCreateInfo compShaderStageInfo{
+                .stage = vk::ShaderStageFlagBits::eCompute,
+                .module = compShaderModule,
+                .pName = "compMain"
+            };
+
+            std::array<vk::PipelineShaderStageCreateInfo, 3> shaderStages{ vertShaderStageInfo, fragShaderStageInfo, compShaderStageInfo };
 
             vk::VertexInputBindingDescription bindingDescription = Vertex::getBindingDescription();
             std::array attributeDescriptions = Vertex::getAttributeDescriptions();
@@ -779,8 +817,8 @@ class Pong {
 
             vk::GraphicsPipelineCreateInfo pipelineInfo{
                 .pNext = &pipelineRenderingCreateInfo,
-                .stageCount = 2,
-                .pStages = shaderStages,
+                .stageCount = shaderStages.size(),
+                .pStages = shaderStages.data(),
                 .pVertexInputState = &vertexInputInfo,
                 .pInputAssemblyState = &inputAssembly,
                 .pViewportState = &viewportState,
@@ -1017,7 +1055,7 @@ class Pong {
             uniformBuffersMemory.clear();
             uniformBuffersMapped.clear();
 
-            for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+            for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
                 vk::DeviceSize bufferSize = sizeof(UniformBufferObject);
                 vk::raii::Buffer buffer = nullptr;
                 vk::raii::DeviceMemory bufferMemory = nullptr;
@@ -1031,6 +1069,56 @@ class Pong {
                 uniformBuffers.emplace_back(std::move(buffer));
                 uniformBuffersMemory.emplace_back(std::move(bufferMemory));
                 uniformBuffersMapped.emplace_back(uniformBuffersMemory[i].mapMemory(0, bufferSize));
+            }
+        }
+
+        void createShaderStorageBuffers() {
+            shaderStorageBuffers.clear();
+            shaderStorageBuffersMemory.clear();
+
+            std::default_random_engine randEng((unsigned)time(nullptr));
+            std::uniform_real_distribution<float> randDist(0.0f, 1.0f);
+
+            std::vector<Particle> particles(PARTICLE_COUNT);
+
+            for (Particle& particle : particles) {
+                float r = 0.25f * sqrtf(randDist(randEng));
+                float theta = randDist(randEng) * 2.0f * 3.14159265358979323846f;
+                float x = r * cosf(theta) * HEIGHT / WIDTH;
+                float y = r * sinf(theta);
+                particle.position = glm::vec2(x, y);
+                particle.velocity = glm::normalize(glm::vec2(x,y)) * 0.00025f;
+                particle.color = glm::vec4(randDist(randEng), randDist(randEng), randDist(randEng), 1.0f);
+            }
+
+            vk::raii::Buffer stagingBuffer = nullptr;
+            vk::raii::DeviceMemory stagingBufferMemory = nullptr;
+
+            vk::DeviceSize bufferSize = sizeof(Particle) * PARTICLE_COUNT;
+
+            createBuffer(
+                bufferSize,
+                vk::BufferUsageFlagBits::eTransferSrc,
+                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+                stagingBuffer, stagingBufferMemory
+            );
+
+            void* data = stagingBufferMemory.mapMemory(0, bufferSize);
+            memcpy(data, particles.data(), (size_t)bufferSize);
+            stagingBufferMemory.unmapMemory();
+
+            for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+                vk::raii::Buffer buffer = nullptr;
+                vk::raii::DeviceMemory memory = nullptr;
+                createBuffer(
+                    bufferSize,
+                    vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
+                    vk::MemoryPropertyFlagBits::eDeviceLocal,
+                    buffer, memory
+                );
+                copyBuffer(stagingBuffer, buffer, bufferSize);
+                shaderStorageBuffers.emplace_back(std::move(buffer));
+                shaderStorageBuffersMemory.emplace_back(std::move(memory));
             }
         }
 
