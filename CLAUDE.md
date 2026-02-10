@@ -123,6 +123,12 @@ Availability (flush) is the expensive part and only needs to happen once. Visibi
 
 **Depth resolve:** MSAA resolve only operates on color — it averages color samples into the single-sample framebuffer. Per-sample depth values are discarded (hence `storeOp::eDontCare` on the depth attachment). Averaging depth values would be meaningless.
 
+**Dynamic rendering MSAA resolve:** With dynamic rendering, resolve is configured inline on the primary (MSAA) color attachment via `resolveMode`, `resolveImageView`, and `resolveImageLayout` — not by adding a second color attachment. (With legacy `VkRenderPass`, resolve was a separate `pResolveAttachments` array in the subpass.) The `loadOp`/`storeOp` on the attachment apply only to the MSAA image; the resolved result is always stored to `resolveImageView` implicitly. Use `storeOp::eDontCare` on the MSAA image since its contents aren't needed after resolve.
+
+**MSAA color image is transient** (like depth): uses `eUndefined` source layout + `loadOp::eClear` + `storeOp::eDontCare`. Needs its own layout transition to `eColorAttachmentOptimal` before rendering.
+
+**Resolve synchronization:** The resolve operation uses `eColorAttachmentOutput` stage and `eColorAttachmentWrite` access — same as regular color writes. There is no separate resolve stage in Vulkan's synchronization model.
+
 ## Shader Notes
 
 **MVP matrix order:** In Slang/HLSL, transformations apply right-to-left. Use `mul(projection, mul(view, mul(model, position)))` to get the correct `projection * view * model * position` order.
