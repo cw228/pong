@@ -695,7 +695,13 @@ class Pong {
                     .descriptorType = vk::DescriptorType::eCombinedImageSampler,
                     .descriptorCount = 1,
                     .stageFlags = vk::ShaderStageFlagBits::eFragment
-                }
+                },
+                vk::DescriptorSetLayoutBinding{
+                    .binding = 2,
+                    .descriptorType = vk::DescriptorType::eUniformBuffer,
+                    .descriptorCount = 1,
+                    .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eCompute
+                },
             };
 
             vk::DescriptorSetLayoutCreateInfo layoutInfo{
