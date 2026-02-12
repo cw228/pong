@@ -78,6 +78,8 @@ compile_slang_shader(${CMAKE_SOURCE_DIR}/shaders/shader.slang vertMain)
 list(APPEND shader_outputs ${shader_output})
 compile_slang_shader(${CMAKE_SOURCE_DIR}/shaders/shader.slang fragMain)
 list(APPEND shader_outputs ${shader_output})
+compile_slang_shader(${CMAKE_SOURCE_DIR}/shaders/compute.slang compMain)
+list(APPEND shader_outputs ${shader_output})
 
 # Custom target for all shaders
 add_custom_target(shaders DEPENDS ${shader_outputs})

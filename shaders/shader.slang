@@ -12,20 +12,6 @@ struct UniformBuffer {
 
 ConstantBuffer<UniformBuffer> ubo;
 
-struct Particle {
-	float2 position;
-	float2 velocity;
-    float4 color;
-};
-
-struct ParticleSSBO {
-    Particle particles;
-};
-
-StructuredBuffer<ParticleSSBO> particlesIn;
-
-RWStructuredBuffer<ParticleSSBO> particlesOut;
-
 struct VertexOutput {
     float4 position : SV_Position;
     float3 color;
@@ -48,6 +34,3 @@ float4 fragMain(VertexOutput vertex) : SV_Target {
     return texture.Sample(vertex.textureCoordinates);
 }
 
-[shader("compute")]
-float4 compMain() {
-}

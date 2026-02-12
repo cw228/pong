@@ -130,6 +130,10 @@ struct UniformBufferObject {
     alignas(16) glm::mat4 projection;
 };
 
+struct ComputeUniformBufferObject {
+    float deltaTime;
+};
+
 struct Particle {
     glm::vec2 position;
     glm::vec2 velocity;
@@ -188,8 +192,11 @@ class Pong {
         vk::Extent2D swapchainExtent;
         std::vector<vk::raii::ImageView> swapchainImageViews;
         vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
-        vk::raii::PipelineLayout pipelineLayout = nullptr;
+        vk::raii::DescriptorSetLayout computeDescriptorSetLayout = nullptr;
+        vk::raii::PipelineLayout graphicsPipelineLayout = nullptr;
+        vk::raii::PipelineLayout computePipelineLayout = nullptr;
         vk::raii::Pipeline graphicsPipeline = nullptr;
+        vk::raii::Pipeline computePipeline = nullptr;
         vk::raii::CommandPool commandPool = nullptr;
         std::vector<vk::raii::CommandBuffer> frameCommandBuffers;
         std::vector<vk::raii::Semaphore> presentCompleteSemaphores;
@@ -208,8 +215,13 @@ class Pong {
         std::vector<vk::raii::Buffer> uniformBuffers;
         std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
         std::vector<void*> uniformBuffersMapped;
+        std::vector<vk::raii::Buffer> computeUniformBuffers;
+        std::vector<vk::raii::DeviceMemory> computeUniformBuffersMemory;
+        std::vector<void*> computeUniformBuffersMapped;
         vk::raii::DescriptorPool descriptorPool = nullptr;
+        vk::raii::DescriptorPool computeDescriptorPool = nullptr;
         std::vector<vk::raii::DescriptorSet> descriptorSets;
+        std::vector<vk::raii::DescriptorSet> computeDescriptorSets;
         vk::raii::Image textureImage = nullptr;
         vk::raii::DeviceMemory textureImageMemory = nullptr;
         vk::raii::ImageView textureImageView = nullptr;
@@ -249,7 +261,9 @@ class Pong {
             createSwapchain();
             createSwapchainImageViews();
             createDescriptorSetLayout();
+            createComputeDescriptorSetLayout();
             createGraphicsPipeline();
+            // createComputePipeline();
             createCommandPool();
             createColorResources();
             createDepthResources();
@@ -261,7 +275,9 @@ class Pong {
             createIndexBuffer();
             createUniformBuffers();
             createDescriptorPool();
+            createComputeDescriptorPool();
             createDescriptorSets();
+            // createComputeDescriptorSets();
             createCommandBuffers();
             createSyncObjects();
         }
@@ -347,6 +363,8 @@ class Pong {
             memcpy(uniformBuffersMapped[currentFrameIndex], &ubo, sizeof(ubo));
         }
 
+        void updateComputeUniformBuffer() {}
+
         void recordFrameCommandBuffer(uint32_t imageIndex) {
             vk::raii::CommandBuffer& commandBuffer = frameCommandBuffers[frameIndex];
 
@@ -426,7 +444,7 @@ class Pong {
             commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
             commandBuffer.bindVertexBuffers(0, *vertexBuffer, {0});
             commandBuffer.bindIndexBuffer(indexBuffer, 0, vk::IndexType::eUint32);
-            commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, *descriptorSets[frameIndex], nullptr);
+            commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, graphicsPipelineLayout, 0, *descriptorSets[frameIndex], nullptr);
 
             vk::Viewport viewport{
                 .x = 0.0f,
@@ -695,13 +713,7 @@ class Pong {
                     .descriptorType = vk::DescriptorType::eCombinedImageSampler,
                     .descriptorCount = 1,
                     .stageFlags = vk::ShaderStageFlagBits::eFragment
-                },
-                vk::DescriptorSetLayoutBinding{
-                    .binding = 2,
-                    .descriptorType = vk::DescriptorType::eUniformBuffer,
-                    .descriptorCount = 1,
-                    .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eCompute
-                },
+                }
             };
 
             vk::DescriptorSetLayoutCreateInfo layoutInfo{
@@ -712,6 +724,36 @@ class Pong {
             descriptorSetLayout = vk::raii::DescriptorSetLayout(device, layoutInfo);
         }
 
+        void createComputeDescriptorSetLayout() {
+            std::array bindings = {
+                vk::DescriptorSetLayoutBinding{
+                    .binding = 0,
+                    .descriptorType = vk::DescriptorType::eUniformBuffer,
+                    .descriptorCount = 1,
+                    .stageFlags = vk::ShaderStageFlagBits::eCompute
+                },
+                vk::DescriptorSetLayoutBinding{
+                    .binding = 1,
+                    .descriptorType = vk::DescriptorType::eStorageBuffer,
+                    .descriptorCount = 1,
+                    .stageFlags = vk::ShaderStageFlagBits::eCompute
+                },
+                vk::DescriptorSetLayoutBinding{
+                    .binding = 2,
+                    .descriptorType = vk::DescriptorType::eStorageBuffer,
+                    .descriptorCount = 1,
+                    .stageFlags = vk::ShaderStageFlagBits::eCompute
+                }
+            };
+
+            vk::DescriptorSetLayoutCreateInfo layoutInfo{
+                .bindingCount = static_cast<uint32_t>(bindings.size()),
+                .pBindings = bindings.data()
+            };
+
+            computeDescriptorSetLayout = vk::raii::DescriptorSetLayout(device, layoutInfo);
+        }
+
         void createGraphicsPipeline() {
             std::vector<char> vertShaderCode = readFile("build/shaders/shader_vertMain.spv");
             vk::raii::ShaderModule vertShaderModule = createShaderModule(vertShaderCode);
@@ -719,9 +761,6 @@ class Pong {
             std::vector<char> fragShaderCode = readFile("build/shaders/shader_fragMain.spv");
             vk::raii::ShaderModule fragShaderModule = createShaderModule(fragShaderCode);
 
-            std::vector<char> compShaderCode = readFile("build/shaders/shader_fragMain.spv");
-            vk::raii::ShaderModule compShaderModule = createShaderModule(compShaderCode);
-            
             vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
                 .stage = vk::ShaderStageFlagBits::eVertex,
                 .module = vertShaderModule,
@@ -734,13 +773,7 @@ class Pong {
                 .pName = "fragMain"
             };
 
-            vk::PipelineShaderStageCreateInfo compShaderStageInfo{
-                .stage = vk::ShaderStageFlagBits::eCompute,
-                .module = compShaderModule,
-                .pName = "compMain"
-            };
-
-            std::array<vk::PipelineShaderStageCreateInfo, 3> shaderStages{ vertShaderStageInfo, fragShaderStageInfo, compShaderStageInfo };
+            std::array<vk::PipelineShaderStageCreateInfo, 2> shaderStages{ vertShaderStageInfo, fragShaderStageInfo };
 
             vk::VertexInputBindingDescription bindingDescription = Vertex::getBindingDescription();
             std::array attributeDescriptions = Vertex::getAttributeDescriptions();
@@ -805,7 +838,7 @@ class Pong {
                 .pushConstantRangeCount = 0
             };
 
-            pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutInfo);
+            graphicsPipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutInfo);
 
             vk::PipelineDepthStencilStateCreateInfo depthStencil{
                 .depthTestEnable = vk::True,
@@ -833,11 +866,37 @@ class Pong {
                 .pDepthStencilState = &depthStencil,
                 .pColorBlendState = &colorBlending,
                 .pDynamicState = &dynamicState,
-                .layout = pipelineLayout,
+                .layout = graphicsPipelineLayout,
                 .renderPass = nullptr
             };
 
             graphicsPipeline = vk::raii::Pipeline(device, nullptr, pipelineInfo);
+        }
+
+        void createComputePipeline() {
+            std::vector<char> compShaderCode = readFile("build/shaders/compute_compMain.spv");
+            vk::raii::ShaderModule compShaderModule = createShaderModule(compShaderCode);
+
+            vk::PipelineShaderStageCreateInfo compShaderStageInfo{
+                .stage = vk::ShaderStageFlagBits::eCompute,
+                .module = compShaderModule,
+                .pName = "compMain"
+            };
+
+            vk::PipelineLayoutCreateInfo layoutInfo{
+                .setLayoutCount = 1,
+                .pSetLayouts = &*computeDescriptorSetLayout,
+                .pushConstantRangeCount = 0
+            };
+
+            computePipelineLayout = vk::raii::PipelineLayout(device, layoutInfo);
+
+            vk::ComputePipelineCreateInfo pipelineInfo{
+                .stage = compShaderStageInfo,
+                .layout = computePipelineLayout
+            };
+
+            computePipeline = vk::raii::Pipeline(device, nullptr, pipelineInfo);
         }
 
         void createCommandPool() {
@@ -1078,6 +1137,28 @@ class Pong {
             }
         }
 
+        void createComputeUniformBuffers() {
+            computeUniformBuffers.clear();
+            computeUniformBuffersMemory.clear();
+            computeUniformBuffersMapped.clear();
+
+            for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+                vk::DeviceSize bufferSize = sizeof(ComputeUniformBufferObject);
+                vk::raii::Buffer buffer = nullptr;
+                vk::raii::DeviceMemory bufferMemory = nullptr;
+                createBuffer(
+                    bufferSize, 
+                    vk::BufferUsageFlagBits::eUniformBuffer, 
+                    vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+                    buffer,
+                    bufferMemory
+                );
+                computeUniformBuffers.emplace_back(std::move(buffer));
+                computeUniformBuffersMemory.emplace_back(std::move(bufferMemory));
+                computeUniformBuffersMapped.emplace_back(uniformBuffersMemory[i].mapMemory(0, bufferSize));
+            }
+        }
+
         void createShaderStorageBuffers() {
             shaderStorageBuffers.clear();
             shaderStorageBuffersMemory.clear();
@@ -1150,6 +1231,28 @@ class Pong {
             descriptorPool = vk::raii::DescriptorPool(device, poolInfo);
         }
 
+        void createComputeDescriptorPool() {
+            std::array poolSizes {
+                vk::DescriptorPoolSize{
+                    .type = vk::DescriptorType::eUniformBuffer,
+                    .descriptorCount = MAX_FRAMES_IN_FLIGHT,
+                },
+                vk::DescriptorPoolSize{
+                    .type = vk::DescriptorType::eStorageBuffer,
+                    .descriptorCount = MAX_FRAMES_IN_FLIGHT * 2,
+                },
+            };
+
+            vk::DescriptorPoolCreateInfo poolInfo{
+                .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+                .maxSets = MAX_FRAMES_IN_FLIGHT,
+                .poolSizeCount = poolSizes.size(),
+                .pPoolSizes = poolSizes.data()
+            };
+
+            computeDescriptorPool = vk::raii::DescriptorPool(device, poolInfo);
+        }
+
         void createDescriptorSets() {
             std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, *descriptorSetLayout);
             vk::DescriptorSetAllocateInfo allocInfo{
@@ -1187,6 +1290,60 @@ class Pong {
                         .descriptorCount = 1,
                         .descriptorType = vk::DescriptorType::eCombinedImageSampler,
                         .pImageInfo = &imageInfo
+                    },
+                };
+                device.updateDescriptorSets(descriptorWrites, {});
+            }
+        }
+
+        void createComputeDescriptorSets() {
+            std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, *computeDescriptorSetLayout);
+            vk::DescriptorSetAllocateInfo allocInfo{
+                .descriptorPool = computeDescriptorPool,
+                .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
+                .pSetLayouts = layouts.data()
+            };
+            computeDescriptorSets = device.allocateDescriptorSets(allocInfo);
+            for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+                vk::DescriptorBufferInfo uniformBufferInfo{
+                    .buffer = computeUniformBuffers[i], // TODO: use different buffers for compute
+                    .offset = 0,
+                    .range = sizeof(ComputeUniformBufferObject)
+                };
+                vk::DescriptorBufferInfo storageBufferInfoLastFrame{
+                    .buffer = shaderStorageBuffers[(i - 1) % MAX_FRAMES_IN_FLIGHT],
+                    .offset = 0,
+                    .range = sizeof(Particle) * PARTICLE_COUNT
+                };
+                vk::DescriptorBufferInfo storageBufferInfoCurrentFrame{
+                    .buffer = shaderStorageBuffers[i],
+                    .offset = 0,
+                    .range = sizeof(Particle) * PARTICLE_COUNT
+                };
+                std::array descriptorWrites{
+                    vk::WriteDescriptorSet{
+                        .dstSet = descriptorSets[i],
+                        .dstBinding = 0,
+                        .dstArrayElement = 0,
+                        .descriptorCount = 1,
+                        .descriptorType = vk::DescriptorType::eUniformBuffer,
+                        .pBufferInfo = &uniformBufferInfo
+                    },
+                    vk::WriteDescriptorSet{
+                        .dstSet = descriptorSets[i],
+                        .dstBinding = 1,
+                        .dstArrayElement = 0,
+                        .descriptorCount = 1,
+                        .descriptorType = vk::DescriptorType::eStorageBuffer,
+                        .pBufferInfo = &storageBufferInfoLastFrame
+                    },
+                    vk::WriteDescriptorSet{
+                        .dstSet = descriptorSets[i],
+                        .dstBinding = 2,
+                        .dstArrayElement = 0,
+                        .descriptorCount = 1,
+                        .descriptorType = vk::DescriptorType::eStorageBuffer,
+                        .pBufferInfo = &storageBufferInfoCurrentFrame
                     },
                 };
                 device.updateDescriptorSets(descriptorWrites, {});
