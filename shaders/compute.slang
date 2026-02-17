@@ -19,7 +19,7 @@ RWStructuredBuffer<ParticleSSBO> particlesOut;
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
-float4 compMain(uint3 threadId : SV_DispatchThreadID) {
+void compMain(uint3 threadId : SV_DispatchThreadID) {
     uint index = threadId.x;
     particlesOut[index].particles.position = particlesIn[index].particles.position + particlesIn[index].particles.velocity.xy * ubo.deltaTime; 
     particlesOut[index].particles.velocity = particlesIn[index].particles.velocity;

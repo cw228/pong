@@ -14,8 +14,7 @@ struct PSInput
 {
     float4 pos : SV_POSITION;
     float3 fragColor : COLOR0;
-    [[vk::builtin("PointCoord")]]
-    float2 pointCoord;
+    float2 pointCoord : SV_PointCoord;
 };
 
 [shader("vertex")]

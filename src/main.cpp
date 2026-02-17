@@ -292,7 +292,7 @@ class Pong {
             createDescriptorSetLayout();
             createComputeDescriptorSetLayout();
             createGraphicsPipeline();
-            // createComputePipeline();
+            createComputePipeline();
             createCommandPool();
             createColorResources();
             createDepthResources();
@@ -303,10 +303,12 @@ class Pong {
             createVertexBuffer();
             createIndexBuffer();
             createUniformBuffers();
+            createComputeUniformBuffers();
+            createShaderStorageBuffers();
             createDescriptorPool();
             createComputeDescriptorPool();
             createDescriptorSets();
-            // createComputeDescriptorSets();
+            createComputeDescriptorSets();
             createCommandBuffers();
             createSyncObjects();
         }
@@ -677,8 +679,6 @@ class Pong {
                     queueFamilyIndices.computeIndex = i;
                     computeIndexSet = true;
                 }
-
-                std::println("g p c: {} {} {}", queueFamilyIndices.graphicsIndex, queueFamilyIndices.presentationIndex, queueFamilyIndices.computeIndex);
 
                 if (graphicsIndexSet && presentationIndexSet && computeIndexSet) {
                     return;
@@ -1259,7 +1259,7 @@ class Pong {
                 );
                 computeUniformBuffers.emplace_back(std::move(buffer));
                 computeUniformBuffersMemory.emplace_back(std::move(bufferMemory));
-                computeUniformBuffersMapped.emplace_back(uniformBuffersMemory[i].mapMemory(0, bufferSize));
+                computeUniformBuffersMapped.emplace_back(computeUniformBuffersMemory[i].mapMemory(0, bufferSize));
             }
         }
 
@@ -1303,7 +1303,7 @@ class Pong {
                 vk::raii::DeviceMemory memory = nullptr;
                 createBuffer(
                     bufferSize,
-                    vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst,
+                    vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
                     vk::MemoryPropertyFlagBits::eDeviceLocal,
                     buffer, memory
                 );
@@ -1426,7 +1426,7 @@ class Pong {
                 };
                 std::array descriptorWrites{
                     vk::WriteDescriptorSet{
-                        .dstSet = descriptorSets[i],
+                        .dstSet = computeDescriptorSets[i],
                         .dstBinding = 0,
                         .dstArrayElement = 0,
                         .descriptorCount = 1,
@@ -1434,7 +1434,7 @@ class Pong {
                         .pBufferInfo = &uniformBufferInfo
                     },
                     vk::WriteDescriptorSet{
-                        .dstSet = descriptorSets[i],
+                        .dstSet = computeDescriptorSets[i],
                         .dstBinding = 1,
                         .dstArrayElement = 0,
                         .descriptorCount = 1,
@@ -1442,7 +1442,7 @@ class Pong {
                         .pBufferInfo = &storageBufferInfoLastFrame
                     },
                     vk::WriteDescriptorSet{
-                        .dstSet = descriptorSets[i],
+                        .dstSet = computeDescriptorSets[i],
                         .dstBinding = 2,
                         .dstArrayElement = 0,
                         .descriptorCount = 1,
@@ -1462,6 +1462,7 @@ class Pong {
             };
 
             frameCommandBuffers = vk::raii::CommandBuffers(device, allocInfo);
+            computeCommandBuffers = vk::raii::CommandBuffers(device, allocInfo);
         }
 
         void createSyncObjects() {
