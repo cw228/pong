@@ -25,5 +25,10 @@ float4 compMain(uint3 threadId : SV_DispatchThreadID) {
     particlesOut[index].particles.velocity = particlesIn[index].particles.velocity;
 
     if ((particlesOut[index].particles.position.x <= -1.0) || (particlesOut[index].particles.position.x >= 1.0)) {
+        particlesOut[index].particles.velocity.x = -particlesOut[index].particles.velocity.x;
+    }
+
+    if ((particlesOut[index].particles.position.y <= -1.0) || (particlesOut[index].particles.position.y >= 1.0)) {
+        particlesOut[index].particles.velocity.y = -particlesOut[index].particles.velocity.y;
     }
 }

@@ -38,7 +38,7 @@ constexpr uint32_t HEIGHT = 600;
 constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 const std::string MODEL_PATH = "models/viking_room.obj";
 const std::string TEXTURE_PATH = "textures/viking_room.png";
-constexpr uint32_t PARTICLE_COUNT = 500;
+constexpr uint32_t PARTICLE_COUNT = 4096;
 
 const std::vector<const char*> validationLayers = {
     "VK_LAYER_KHRONOS_validation"
@@ -124,7 +124,7 @@ namespace std {
 
 
 // Explicit alignment for shader 
-struct UniformBufferObject {
+struct GraphicsUniformBufferObject {
     alignas(16) glm::mat4 model;
     alignas(16) glm::mat4 view;
     alignas(16) glm::mat4 projection;
@@ -138,6 +138,31 @@ struct Particle {
     glm::vec2 position;
     glm::vec2 velocity;
     glm::vec4 color;
+
+    static vk::VertexInputBindingDescription getBindingDescription() {
+        return {
+            .binding = 0,
+            .stride = sizeof(Particle),
+            .inputRate = vk::VertexInputRate::eVertex
+        };
+    }
+
+    static std::array<vk::VertexInputAttributeDescription, 2> getAttributeDescriptions() {
+        return {
+            vk::VertexInputAttributeDescription{
+                .location = 0,
+                .binding = 0,
+                .format = vk::Format::eR32G32Sfloat,
+                .offset = offsetof(Particle, position)
+            },
+            vk::VertexInputAttributeDescription{
+                .location = 1,
+                .binding = 0,
+                .format = vk::Format::eR32G32B32A32Sfloat,
+                .offset = offsetof(Particle, color)
+            },
+        };
+    }
 };
 
 // const std::vector<Vertex> vertices = {
@@ -199,9 +224,13 @@ class Pong {
         vk::raii::Pipeline computePipeline = nullptr;
         vk::raii::CommandPool commandPool = nullptr;
         std::vector<vk::raii::CommandBuffer> frameCommandBuffers;
+        std::vector<vk::raii::CommandBuffer> computeCommandBuffers;
         std::vector<vk::raii::Semaphore> presentCompleteSemaphores;
         std::vector<vk::raii::Semaphore> renderFinishedSemaphores;
         std::vector<vk::raii::Fence> drawFences;
+        std::vector<vk::raii::Fence> computeFences;
+        vk::raii::Semaphore timelineSemaphore = nullptr;
+        uint64_t timelineValue = 0;
         uint32_t frameIndex = 0;
         bool frameBufferResized = false;
         std::vector<Vertex> vertices;
@@ -295,6 +324,11 @@ class Pong {
         }
 
         void drawFrame() {
+            uint64_t computeWaitValue = timelineValue;
+            uint64_t computeSignalValue = ++timelineValue;
+            uint64_t graphicsWaitValue = computeSignalValue;
+            uint64_t graphicsSignalValue = ++timelineValue;
+
             vk::Result fenceResult = device.waitForFences(*drawFences[frameIndex], vk::True, UINT64_MAX);
 
             if (fenceResult != vk::Result::eSuccess) {
@@ -308,32 +342,76 @@ class Pong {
                 return;
             }
 
-            updateUniformBuffer(frameIndex);
-
-            recordFrameCommandBuffer(imageIndex);
-
             device.resetFences(*drawFences[frameIndex]);
 
-            vk::PipelineStageFlags waitDestinationStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput);
-            const vk::SubmitInfo submitInfo{
+            updateGraphicsUniformBuffer(frameIndex);
+            updateComputeUniformBuffer(frameIndex);
+
+            recordFrameCommandBuffer(imageIndex);
+            recordComputeCommandBuffer(frameIndex);
+
+            vk::TimelineSemaphoreSubmitInfo computeTimelineInfo{
+                .waitSemaphoreValueCount = 1,
+                .pWaitSemaphoreValues = &computeWaitValue,
+                .signalSemaphoreValueCount = 1,
+                .pSignalSemaphoreValues = &computeSignalValue
+            };
+
+            vk::PipelineStageFlags computeWaitStage = vk::PipelineStageFlagBits::eComputeShader;
+
+            const vk::SubmitInfo computeSubmitInfo{
+                .pNext = &computeTimelineInfo,
                 .waitSemaphoreCount = 1,
-                .pWaitSemaphores = &*presentCompleteSemaphores[frameIndex],
-                .pWaitDstStageMask = &waitDestinationStageMask,
+                .pWaitSemaphores = &*timelineSemaphore,
+                .pWaitDstStageMask = &computeWaitStage,
+                .commandBufferCount = 1,
+                .pCommandBuffers = &*computeCommandBuffers[frameIndex],
+                .signalSemaphoreCount = 1,
+                .pSignalSemaphores = &*timelineSemaphore
+            };
+
+            computeQueue.submit(computeSubmitInfo, nullptr);
+
+            vk::TimelineSemaphoreSubmitInfo graphicsTimelineInfo{
+                .waitSemaphoreValueCount = 1,
+                .pWaitSemaphoreValues = &graphicsWaitValue,
+                .signalSemaphoreValueCount = 1,
+                .pSignalSemaphoreValues = &graphicsSignalValue
+            };
+
+            vk::PipelineStageFlags graphicsWaitStage = vk::PipelineStageFlagBits::eVertexInput;
+
+            const vk::SubmitInfo graphicsSubmitInfo{
+                .pNext = &graphicsTimelineInfo,
+                .waitSemaphoreCount = 1,
+                .pWaitSemaphores = &*timelineSemaphore,
+                .pWaitDstStageMask = &graphicsWaitStage,
                 .commandBufferCount = 1,
                 .pCommandBuffers = &*frameCommandBuffers[frameIndex],
                 .signalSemaphoreCount = 1,
-                .pSignalSemaphores = &*renderFinishedSemaphores[imageIndex]
+                .pSignalSemaphores = &*timelineSemaphore
             };
 
-            graphicsQueue.submit(submitInfo, *drawFences[frameIndex]);
+            graphicsQueue.submit(graphicsSubmitInfo, *drawFences[frameIndex]);
+            
+            vk::SemaphoreWaitInfo waitInfo{
+                .semaphoreCount = 1,
+                .pSemaphores = &*timelineSemaphore,
+                .pValues = &graphicsSignalValue
+            };
+
+            vk::Result waitResult = device.waitSemaphores(waitInfo, UINT64_MAX);
+            if (waitResult != vk::Result::eSuccess) {
+                std::runtime_error("failed to wait for semaphore!");
+            }
 
             // - Wait semaphore is not reset until operation completes
             // - The only way we know an image is done presenting (and therefore renderFinishedSemaphore reset) 
             //   is if acquireNextImage returns that imageIndex 
             // - Therefore, we need to use renderFinishedSemaphores with imageIndex to be sure we're not using it before it's reset
             const vk::PresentInfoKHR presentInfo{
-                .waitSemaphoreCount = 1,
-                .pWaitSemaphores = &*renderFinishedSemaphores[imageIndex],
+                .waitSemaphoreCount = 0,
+                .pWaitSemaphores = nullptr,
                 .swapchainCount = 1,
                 .pSwapchains = &*swapchain,
                 .pImageIndices = &imageIndex
@@ -349,13 +427,13 @@ class Pong {
             frameIndex = (frameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
         }
         
-        void updateUniformBuffer(uint32_t currentFrameIndex) {
+        void updateGraphicsUniformBuffer(uint32_t currentFrameIndex) {
             static std::chrono::time_point startTime = std::chrono::high_resolution_clock::now();
 
             std::chrono::time_point currentTime = std::chrono::high_resolution_clock::now();
             float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
-            UniformBufferObject ubo{};
+            GraphicsUniformBufferObject ubo{};
             ubo.model = glm::rotate(glm::mat4(1.0f), time*glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
             ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
             ubo.projection = glm::perspective(glm::radians(45.0f), static_cast<float>(swapchainExtent.width) / static_cast<float>(swapchainExtent.height), 0.1f, 10.0f);
@@ -363,7 +441,16 @@ class Pong {
             memcpy(uniformBuffersMapped[currentFrameIndex], &ubo, sizeof(ubo));
         }
 
-        void updateComputeUniformBuffer() {}
+        void updateComputeUniformBuffer(uint32_t currentFrameIndex) {
+            static auto lastTime = std::chrono::high_resolution_clock::now();
+            auto currentTime = std::chrono::high_resolution_clock::now();
+            float deltaTime = std::chrono::duration<float>(currentTime - lastTime).count();
+            lastTime = currentTime;
+
+            ComputeUniformBufferObject ubo{};
+            ubo.deltaTime = deltaTime;
+            memcpy(computeUniformBuffersMapped[currentFrameIndex], &ubo, sizeof(ubo));
+        }
 
         void recordFrameCommandBuffer(uint32_t imageIndex) {
             vk::raii::CommandBuffer& commandBuffer = frameCommandBuffers[frameIndex];
@@ -442,7 +529,8 @@ class Pong {
 
             commandBuffer.beginRendering(renderingInfo);
             commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
-            commandBuffer.bindVertexBuffers(0, *vertexBuffer, {0});
+            // commandBuffer.bindVertexBuffers(0, *vertexBuffer, {0});
+            commandBuffer.bindVertexBuffers(0, *shaderStorageBuffers[frameIndex], {0});
             commandBuffer.bindIndexBuffer(indexBuffer, 0, vk::IndexType::eUint32);
             commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, graphicsPipelineLayout, 0, *descriptorSets[frameIndex], nullptr);
 
@@ -462,7 +550,8 @@ class Pong {
 
             commandBuffer.setViewport(0, viewport);
             commandBuffer.setScissor(0, scissor);
-            commandBuffer.drawIndexed(indices.size(), 1, 0, 0, 0);
+            // commandBuffer.drawIndexed(indices.size(), 1, 0, 0, 0);
+            commandBuffer.draw(PARTICLE_COUNT, 1, 0, 0);
             commandBuffer.endRendering();
 
             recordImageLayoutTransition(
@@ -477,6 +566,18 @@ class Pong {
                 vk::ImageAspectFlagBits::eColor,
                 1
             );
+
+            commandBuffer.end();
+        }
+
+        void recordComputeCommandBuffer(uint32_t frameIndex) {
+            vk::raii::CommandBuffer& commandBuffer = computeCommandBuffers[frameIndex];
+
+            commandBuffer.begin({});
+
+            commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, computePipeline);
+            commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, computePipelineLayout, 0, *computeDescriptorSets[frameIndex], nullptr);
+            commandBuffer.dispatch(PARTICLE_COUNT / 256, 1, 1);
 
             commandBuffer.end();
         }
@@ -599,12 +700,14 @@ class Pong {
                 vk::PhysicalDeviceFeatures2, 
                 vk::PhysicalDeviceVulkan11Features, 
                 vk::PhysicalDeviceVulkan13Features, 
-                vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
+                vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT,
+                vk::PhysicalDeviceTimelineSemaphoreFeatures
             > featureChain = {
                 { .features = { .samplerAnisotropy = true } },
                 { .shaderDrawParameters = true },
                 { .synchronization2 = true, .dynamicRendering = true },
-                { .extendedDynamicState = true }
+                { .extendedDynamicState = true },
+                { .timelineSemaphore = true }
             };
 
             vk::DeviceCreateInfo deviceCreateInfo{
@@ -775,8 +878,8 @@ class Pong {
 
             std::array<vk::PipelineShaderStageCreateInfo, 2> shaderStages{ vertShaderStageInfo, fragShaderStageInfo };
 
-            vk::VertexInputBindingDescription bindingDescription = Vertex::getBindingDescription();
-            std::array attributeDescriptions = Vertex::getAttributeDescriptions();
+            vk::VertexInputBindingDescription bindingDescription = Particle::getBindingDescription();
+            std::array attributeDescriptions = Particle::getAttributeDescriptions();
 
             vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
                 .vertexBindingDescriptionCount = 1,
@@ -786,7 +889,8 @@ class Pong {
             };
 
             vk::PipelineInputAssemblyStateCreateInfo inputAssembly{
-                .topology = vk::PrimitiveTopology::eTriangleList
+                .topology = vk::PrimitiveTopology::ePointList,
+                .primitiveRestartEnable = vk::False
             };
 
             std::array dynamicStates = {
@@ -1121,7 +1225,7 @@ class Pong {
             uniformBuffersMapped.clear();
 
             for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-                vk::DeviceSize bufferSize = sizeof(UniformBufferObject);
+                vk::DeviceSize bufferSize = sizeof(GraphicsUniformBufferObject);
                 vk::raii::Buffer buffer = nullptr;
                 vk::raii::DeviceMemory bufferMemory = nullptr;
                 createBuffer(
@@ -1267,7 +1371,7 @@ class Pong {
                 vk::DescriptorBufferInfo bufferInfo{
                     .buffer = uniformBuffers[i],
                     .offset = 0,
-                    .range = sizeof(UniformBufferObject)
+                    .range = sizeof(GraphicsUniformBufferObject)
                 };
                 vk::DescriptorImageInfo imageInfo{
                     .sampler = textureSampler,
@@ -1371,6 +1475,13 @@ class Pong {
                 presentCompleteSemaphores.emplace_back(device, vk::SemaphoreCreateInfo());
                 drawFences.emplace_back(device, vk::FenceCreateInfo{ .flags = vk::FenceCreateFlagBits::eSignaled });
             }
+
+            vk::SemaphoreTypeCreateInfo semaphoreType{
+                .semaphoreType = vk::SemaphoreType::eTimeline,
+                .initialValue = 0
+            };
+
+            timelineSemaphore = vk::raii::Semaphore(device, { .pNext = &semaphoreType });
         }
 
         // Helper functions
