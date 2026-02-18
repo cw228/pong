@@ -187,7 +187,7 @@ class Pong {
         void run() {
             initWindow();
             initVulkan();
-            mainLoop();
+            // mainLoop();
         }
 
     private:
@@ -288,29 +288,29 @@ class Pong {
             createLogicalDevice();
             getQueues();
             createSwapchain();
-            createSwapchainImageViews();
-            createDescriptorSetLayout();
-            createComputeDescriptorSetLayout();
-            createGraphicsPipeline();
-            createComputePipeline();
-            createCommandPool();
-            createColorResources();
-            createDepthResources();
-            createTextureImage();
-            createTextureImageView();
-            createTextureSampler();
-            loadModel();
-            createVertexBuffer();
-            createIndexBuffer();
-            createUniformBuffers();
-            createComputeUniformBuffers();
-            createShaderStorageBuffers();
-            createDescriptorPool();
-            createComputeDescriptorPool();
-            createDescriptorSets();
-            createComputeDescriptorSets();
-            createCommandBuffers();
-            createSyncObjects();
+            // createSwapchainImageViews();
+            // createDescriptorSetLayout();
+            // createComputeDescriptorSetLayout();
+            // createGraphicsPipeline();
+            // createComputePipeline();
+            // createCommandPool();
+            // createColorResources();
+            // createDepthResources();
+            // createTextureImage();
+            // createTextureImageView();
+            // createTextureSampler();
+            // loadModel();
+            // createVertexBuffer();
+            // createIndexBuffer();
+            // createUniformBuffers();
+            // createComputeUniformBuffers();
+            // createShaderStorageBuffers();
+            // createDescriptorPool();
+            // createComputeDescriptorPool();
+            // createDescriptorSets();
+            // createComputeDescriptorSets();
+            // createCommandBuffers();
+            // createSyncObjects();
         }
 
         void mainLoop() {
@@ -326,18 +326,12 @@ class Pong {
         }
 
         void drawFrame() {
-            uint64_t computeWaitValue = timelineValue;
-            uint64_t computeSignalValue = ++timelineValue;
-            uint64_t graphicsWaitValue = computeSignalValue;
-            uint64_t graphicsSignalValue = ++timelineValue;
-
+            auto [acquireResult, imageIndex] = swapchain.acquireNextImage(UINT64_MAX, nullptr, *drawFences[frameIndex]);
             vk::Result fenceResult = device.waitForFences(*drawFences[frameIndex], vk::True, UINT64_MAX);
 
             if (fenceResult != vk::Result::eSuccess) {
                 throw std::runtime_error("failed to wait for fence");
             }
-
-            auto [acquireResult, imageIndex] = swapchain.acquireNextImage(UINT64_MAX, *presentCompleteSemaphores[frameIndex], nullptr);
 
             if (acquireResult == vk::Result::eErrorOutOfDateKHR) {
                 recreateSwapchain();
@@ -345,6 +339,12 @@ class Pong {
             }
 
             device.resetFences(*drawFences[frameIndex]);
+
+            uint64_t computeWaitValue = timelineValue;
+            uint64_t computeSignalValue = ++timelineValue;
+            uint64_t graphicsWaitValue = computeSignalValue;
+            uint64_t graphicsSignalValue = ++timelineValue;
+
 
             updateGraphicsUniformBuffer(frameIndex);
             updateComputeUniformBuffer(frameIndex);
@@ -394,7 +394,7 @@ class Pong {
                 .pSignalSemaphores = &*timelineSemaphore
             };
 
-            graphicsQueue.submit(graphicsSubmitInfo, *drawFences[frameIndex]);
+            graphicsQueue.submit(graphicsSubmitInfo, nullptr);
             
             vk::SemaphoreWaitInfo waitInfo{
                 .semaphoreCount = 1,
