@@ -38,7 +38,6 @@ constexpr uint32_t HEIGHT = 600;
 constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 const std::string MODEL_PATH = "models/viking_room.obj";
 const std::string TEXTURE_PATH = "textures/viking_room.png";
-constexpr uint32_t PARTICLE_COUNT = 4096;
 
 const std::vector<const char*> validationLayers = {
     "VK_LAYER_KHRONOS_validation"
@@ -68,7 +67,6 @@ struct Window {
 struct QueueFamilyIndices {
     uint32_t graphicsIndex;
     uint32_t presentationIndex;
-    uint32_t computeIndex;
 };
 
 struct Vertex {
@@ -122,47 +120,11 @@ namespace std {
     };
 }
 
-
 // Explicit alignment for shader 
-struct GraphicsUniformBufferObject {
+struct UniformBufferObject {
     alignas(16) glm::mat4 model;
     alignas(16) glm::mat4 view;
     alignas(16) glm::mat4 projection;
-};
-
-struct ComputeUniformBufferObject {
-    float deltaTime;
-};
-
-struct Particle {
-    glm::vec2 position;
-    glm::vec2 velocity;
-    glm::vec4 color;
-
-    static vk::VertexInputBindingDescription getBindingDescription() {
-        return {
-            .binding = 0,
-            .stride = sizeof(Particle),
-            .inputRate = vk::VertexInputRate::eVertex
-        };
-    }
-
-    static std::array<vk::VertexInputAttributeDescription, 2> getAttributeDescriptions() {
-        return {
-            vk::VertexInputAttributeDescription{
-                .location = 0,
-                .binding = 0,
-                .format = vk::Format::eR32G32Sfloat,
-                .offset = offsetof(Particle, position)
-            },
-            vk::VertexInputAttributeDescription{
-                .location = 1,
-                .binding = 0,
-                .format = vk::Format::eR32G32B32A32Sfloat,
-                .offset = offsetof(Particle, color)
-            },
-        };
-    }
 };
 
 // const std::vector<Vertex> vertices = {
@@ -217,19 +179,12 @@ class Pong {
         vk::Extent2D swapchainExtent;
         std::vector<vk::raii::ImageView> swapchainImageViews;
         vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
-        vk::raii::DescriptorSetLayout computeDescriptorSetLayout = nullptr;
         vk::raii::PipelineLayout graphicsPipelineLayout = nullptr;
-        vk::raii::PipelineLayout computePipelineLayout = nullptr;
         vk::raii::Pipeline graphicsPipeline = nullptr;
-        vk::raii::Pipeline computePipeline = nullptr;
         vk::raii::CommandPool commandPool = nullptr;
         std::vector<vk::raii::CommandBuffer> frameCommandBuffers;
-        std::vector<vk::raii::CommandBuffer> computeCommandBuffers;
-        std::vector<vk::raii::Semaphore> presentCompleteSemaphores;
-        std::vector<vk::raii::Semaphore> renderFinishedSemaphores;
         std::vector<vk::raii::Fence> drawFences;
-        std::vector<vk::raii::Fence> computeFences;
-        vk::raii::Semaphore timelineSemaphore = nullptr;
+        vk::raii::Semaphore semaphore = nullptr;
         uint64_t timelineValue = 0;
         uint32_t frameIndex = 0;
         bool frameBufferResized = false;
@@ -244,13 +199,8 @@ class Pong {
         std::vector<vk::raii::Buffer> uniformBuffers;
         std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
         std::vector<void*> uniformBuffersMapped;
-        std::vector<vk::raii::Buffer> computeUniformBuffers;
-        std::vector<vk::raii::DeviceMemory> computeUniformBuffersMemory;
-        std::vector<void*> computeUniformBuffersMapped;
         vk::raii::DescriptorPool descriptorPool = nullptr;
-        vk::raii::DescriptorPool computeDescriptorPool = nullptr;
         std::vector<vk::raii::DescriptorSet> descriptorSets;
-        std::vector<vk::raii::DescriptorSet> computeDescriptorSets;
         vk::raii::Image textureImage = nullptr;
         vk::raii::DeviceMemory textureImageMemory = nullptr;
         vk::raii::ImageView textureImageView = nullptr;
@@ -263,8 +213,6 @@ class Pong {
         vk::raii::ImageView colorImageView = nullptr;
         uint32_t mipLevels;
         vk::SampleCountFlagBits msaaSamples = vk::SampleCountFlagBits::e1;
-        std::vector<vk::raii::Buffer> shaderStorageBuffers;
-        std::vector<vk::raii::DeviceMemory> shaderStorageBuffersMemory;
         // mk:members
         
         void initWindow() {
@@ -290,9 +238,7 @@ class Pong {
             createSwapchain();
             createSwapchainImageViews();
             createDescriptorSetLayout();
-            createComputeDescriptorSetLayout();
             createGraphicsPipeline();
-            createComputePipeline();
             createCommandPool();
             createColorResources();
             createDepthResources();
@@ -303,12 +249,8 @@ class Pong {
             createVertexBuffer();
             createIndexBuffer();
             createUniformBuffers();
-            createComputeUniformBuffers();
-            createShaderStorageBuffers();
             createDescriptorPool();
-            createComputeDescriptorPool();
             createDescriptorSets();
-            createComputeDescriptorSets();
             createCommandBuffers();
             createSyncObjects();
         }
@@ -332,80 +274,41 @@ class Pong {
                 throw std::runtime_error("failed to wait for fence");
             }
             device.resetFences(*drawFences[frameIndex]);
+            // We know image is done presenting and ready for rendering when we pass the fence
 
-            uint64_t computeWaitValue = timelineValue;
-            uint64_t computeSignalValue = ++timelineValue;
-            uint64_t graphicsWaitValue = computeSignalValue;
-            uint64_t graphicsSignalValue = ++timelineValue;
+            uint64_t renderFinishedSignal = ++timelineValue;
 
-            updateGraphicsUniformBuffer(frameIndex);
-            updateComputeUniformBuffer(frameIndex);
+            updateUniformBuffer(frameIndex);
 
             recordFrameCommandBuffer(imageIndex);
-            recordComputeCommandBuffer(frameIndex);
-
-            vk::TimelineSemaphoreSubmitInfo computeTimelineInfo{
-                .waitSemaphoreValueCount = 1,
-                .pWaitSemaphoreValues = &computeWaitValue,
-                .signalSemaphoreValueCount = 1,
-                .pSignalSemaphoreValues = &computeSignalValue
-            };
-
-            vk::PipelineStageFlags computeWaitStage = vk::PipelineStageFlagBits::eComputeShader;
-
-            const vk::SubmitInfo computeSubmitInfo{
-                .pNext = &computeTimelineInfo,
-                .waitSemaphoreCount = 1,
-                .pWaitSemaphores = &*timelineSemaphore,
-                .pWaitDstStageMask = &computeWaitStage,
-                .commandBufferCount = 1,
-                .pCommandBuffers = &*computeCommandBuffers[frameIndex],
-                .signalSemaphoreCount = 1,
-                .pSignalSemaphores = &*timelineSemaphore
-            };
-
-            computeQueue.submit(computeSubmitInfo, nullptr);
-
-            vk::TimelineSemaphoreSubmitInfo graphicsTimelineInfo{
-                .waitSemaphoreValueCount = 1,
-                .pWaitSemaphoreValues = &graphicsWaitValue,
-                .signalSemaphoreValueCount = 1,
-                .pSignalSemaphoreValues = &graphicsSignalValue
-            };
-
-            vk::PipelineStageFlags graphicsWaitStage = vk::PipelineStageFlagBits::eVertexInput;
 
             const vk::SubmitInfo graphicsSubmitInfo{
-                .pNext = &graphicsTimelineInfo,
-                .waitSemaphoreCount = 1,
-                .pWaitSemaphores = &*timelineSemaphore,
-                .pWaitDstStageMask = &graphicsWaitStage,
+                .waitSemaphoreCount = 0,
+                .pWaitSemaphores = nullptr,
+                .pWaitDstStageMask = nullptr,
                 .commandBufferCount = 1,
                 .pCommandBuffers = &*frameCommandBuffers[frameIndex],
                 .signalSemaphoreCount = 1,
-                .pSignalSemaphores = &*timelineSemaphore
+                .pSignalSemaphores = &*semaphore
             };
 
             graphicsQueue.submit(graphicsSubmitInfo, nullptr);
             
             vk::SemaphoreWaitInfo waitInfo{
                 .semaphoreCount = 1,
-                .pSemaphores = &*timelineSemaphore,
-                .pValues = &graphicsSignalValue
+                .pSemaphores = &*semaphore,
+                .pValues = &renderFinishedSignal
             };
 
-            vk::Result waitResult = device.waitSemaphores(waitInfo, UINT64_MAX);
-            if (waitResult != vk::Result::eSuccess) {
-                std::runtime_error("failed to wait for semaphore!");
-            }
+            vk::TimelineSemaphoreSubmitInfo timelineInfo{
+                .waitSemaphoreValueCount = 1,
+                .pWaitSemaphoreValues = &renderFinishedSignal
+            };
 
-            // - Wait semaphore is not reset until operation completes
-            // - The only way we know an image is done presenting (and therefore renderFinishedSemaphore reset) 
-            //   is if acquireNextImage returns that imageIndex 
-            // - Therefore, we need to use renderFinishedSemaphores with imageIndex to be sure we're not using it before it's reset
             const vk::PresentInfoKHR presentInfo{
-                .waitSemaphoreCount = 0,
-                .pWaitSemaphores = nullptr,
+                .pNext = &timelineInfo,
+                .waitSemaphoreCount = 1,
+                .pWaitSemaphores = &*semaphore,
                 .swapchainCount = 1,
                 .pSwapchains = &*swapchain,
                 .pImageIndices = &imageIndex
@@ -421,29 +324,18 @@ class Pong {
             frameIndex = (frameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
         }
         
-        void updateGraphicsUniformBuffer(uint32_t currentFrameIndex) {
+        void updateUniformBuffer(uint32_t currentFrameIndex) {
             static std::chrono::time_point startTime = std::chrono::high_resolution_clock::now();
 
             std::chrono::time_point currentTime = std::chrono::high_resolution_clock::now();
             float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
-            GraphicsUniformBufferObject ubo{};
+            UniformBufferObject ubo{};
             ubo.model = glm::rotate(glm::mat4(1.0f), time*glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
             ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
             ubo.projection = glm::perspective(glm::radians(45.0f), static_cast<float>(swapchainExtent.width) / static_cast<float>(swapchainExtent.height), 0.1f, 10.0f);
             ubo.projection[1][1] *= -1;
             memcpy(uniformBuffersMapped[currentFrameIndex], &ubo, sizeof(ubo));
-        }
-
-        void updateComputeUniformBuffer(uint32_t currentFrameIndex) {
-            static auto lastTime = std::chrono::high_resolution_clock::now();
-            auto currentTime = std::chrono::high_resolution_clock::now();
-            float deltaTime = std::chrono::duration<float>(currentTime - lastTime).count();
-            lastTime = currentTime;
-
-            ComputeUniformBufferObject ubo{};
-            ubo.deltaTime = deltaTime;
-            memcpy(computeUniformBuffersMapped[currentFrameIndex], &ubo, sizeof(ubo));
         }
 
         void recordFrameCommandBuffer(uint32_t imageIndex) {
@@ -523,8 +415,7 @@ class Pong {
 
             commandBuffer.beginRendering(renderingInfo);
             commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
-            // commandBuffer.bindVertexBuffers(0, *vertexBuffer, {0});
-            commandBuffer.bindVertexBuffers(0, *shaderStorageBuffers[frameIndex], {0});
+            commandBuffer.bindVertexBuffers(0, *vertexBuffer, {0});
             commandBuffer.bindIndexBuffer(indexBuffer, 0, vk::IndexType::eUint32);
             commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, graphicsPipelineLayout, 0, *descriptorSets[frameIndex], nullptr);
 
@@ -544,8 +435,7 @@ class Pong {
 
             commandBuffer.setViewport(0, viewport);
             commandBuffer.setScissor(0, scissor);
-            // commandBuffer.drawIndexed(indices.size(), 1, 0, 0, 0);
-            commandBuffer.draw(PARTICLE_COUNT, 1, 0, 0);
+            commandBuffer.drawIndexed(indices.size(), 1, 0, 0, 0);
             commandBuffer.endRendering();
 
             recordImageLayoutTransition(
@@ -560,18 +450,6 @@ class Pong {
                 vk::ImageAspectFlagBits::eColor,
                 1
             );
-
-            commandBuffer.end();
-        }
-
-        void recordComputeCommandBuffer(uint32_t frameIndex) {
-            vk::raii::CommandBuffer& commandBuffer = computeCommandBuffers[frameIndex];
-
-            commandBuffer.begin({});
-
-            commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, computePipeline);
-            commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, computePipelineLayout, 0, *computeDescriptorSets[frameIndex], nullptr);
-            commandBuffer.dispatch(PARTICLE_COUNT / 256, 1, 1);
 
             commandBuffer.end();
         }
@@ -628,16 +506,6 @@ class Pong {
                 physicalDevice = device;
                 msaaSamples = getMaxSampleCount();
                 return;
-
-                // vk::PhysicalDeviceFeatures deviceFeatures = device.getFeatures();
-                //
-                // const char* name = deviceProperties.deviceName.data();
-                //
-                // if (deviceProperties.deviceType == vk::PhysicalDeviceType::eDiscreteGpu && deviceFeatures.geometryShader) {
-                //     std::println("Using {}", name);
-                //     physicalDevice = device;
-                //     return;
-                // }
             }
 
             throw std::runtime_error("failed to find a suitable GPU");
@@ -647,13 +515,6 @@ class Pong {
             std::vector<vk::QueueFamilyProperties> queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
             bool graphicsIndexSet = false;
             bool presentationIndexSet = false;
-            bool computeIndexSet = false;
-
-            // for (uint32_t i = 0; i < queueFamilyProperties.size(); ++i) {
-            //     vk::QueueFlags graphics = queueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eGraphics;
-            //     vk::QueueFlags compute = queueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eCompute;
-            //     std::println("{} {}", static_cast<uint32_t>(graphics), static_cast<uint32_t>(compute));
-            // }
 
             for (uint32_t i = 0; i < queueFamilyProperties.size(); ++i) {
                 if (queueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eGraphics) {
@@ -667,12 +528,7 @@ class Pong {
                     presentationIndexSet = true;
                 }
 
-                if (queueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eCompute) {
-                    queueFamilyIndices.computeIndex = i;
-                    computeIndexSet = true;
-                }
-
-                if (graphicsIndexSet && presentationIndexSet && computeIndexSet) {
+                if (graphicsIndexSet && presentationIndexSet) {
                     return;
                 }
             }
@@ -716,7 +572,6 @@ class Pong {
         void getQueues() {
             graphicsQueue = device.getQueue(queueFamilyIndices.graphicsIndex, 0);
             presentQueue = device.getQueue(queueFamilyIndices.presentationIndex, 0);
-            computeQueue = device.getQueue(queueFamilyIndices.computeIndex, 0);
         }
 
         void createSwapchain() {
@@ -774,8 +629,6 @@ class Pong {
 
             // Cleanup
             swapchainImageViews.clear();
-            presentCompleteSemaphores.clear();
-            renderFinishedSemaphores.clear();
             drawFences.clear();
             swapchain = nullptr;
 
@@ -819,36 +672,6 @@ class Pong {
             descriptorSetLayout = vk::raii::DescriptorSetLayout(device, layoutInfo);
         }
 
-        void createComputeDescriptorSetLayout() {
-            std::array bindings = {
-                vk::DescriptorSetLayoutBinding{
-                    .binding = 0,
-                    .descriptorType = vk::DescriptorType::eUniformBuffer,
-                    .descriptorCount = 1,
-                    .stageFlags = vk::ShaderStageFlagBits::eCompute
-                },
-                vk::DescriptorSetLayoutBinding{
-                    .binding = 1,
-                    .descriptorType = vk::DescriptorType::eStorageBuffer,
-                    .descriptorCount = 1,
-                    .stageFlags = vk::ShaderStageFlagBits::eCompute
-                },
-                vk::DescriptorSetLayoutBinding{
-                    .binding = 2,
-                    .descriptorType = vk::DescriptorType::eStorageBuffer,
-                    .descriptorCount = 1,
-                    .stageFlags = vk::ShaderStageFlagBits::eCompute
-                }
-            };
-
-            vk::DescriptorSetLayoutCreateInfo layoutInfo{
-                .bindingCount = static_cast<uint32_t>(bindings.size()),
-                .pBindings = bindings.data()
-            };
-
-            computeDescriptorSetLayout = vk::raii::DescriptorSetLayout(device, layoutInfo);
-        }
-
         void createGraphicsPipeline() {
             std::vector<char> vertShaderCode = readFile("build/shaders/shader_vertMain.spv");
             vk::raii::ShaderModule vertShaderModule = createShaderModule(vertShaderCode);
@@ -870,8 +693,8 @@ class Pong {
 
             std::array<vk::PipelineShaderStageCreateInfo, 2> shaderStages{ vertShaderStageInfo, fragShaderStageInfo };
 
-            vk::VertexInputBindingDescription bindingDescription = Particle::getBindingDescription();
-            std::array attributeDescriptions = Particle::getAttributeDescriptions();
+            vk::VertexInputBindingDescription bindingDescription = Vertex::getBindingDescription();
+            std::array attributeDescriptions = Vertex::getAttributeDescriptions();
 
             vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
                 .vertexBindingDescriptionCount = 1,
@@ -967,32 +790,6 @@ class Pong {
             };
 
             graphicsPipeline = vk::raii::Pipeline(device, nullptr, pipelineInfo);
-        }
-
-        void createComputePipeline() {
-            std::vector<char> compShaderCode = readFile("build/shaders/compute_compMain.spv");
-            vk::raii::ShaderModule compShaderModule = createShaderModule(compShaderCode);
-
-            vk::PipelineShaderStageCreateInfo compShaderStageInfo{
-                .stage = vk::ShaderStageFlagBits::eCompute,
-                .module = compShaderModule,
-                .pName = "compMain"
-            };
-
-            vk::PipelineLayoutCreateInfo layoutInfo{
-                .setLayoutCount = 1,
-                .pSetLayouts = &*computeDescriptorSetLayout,
-                .pushConstantRangeCount = 0
-            };
-
-            computePipelineLayout = vk::raii::PipelineLayout(device, layoutInfo);
-
-            vk::ComputePipelineCreateInfo pipelineInfo{
-                .stage = compShaderStageInfo,
-                .layout = computePipelineLayout
-            };
-
-            computePipeline = vk::raii::Pipeline(device, nullptr, pipelineInfo);
         }
 
         void createCommandPool() {
@@ -1217,7 +1014,7 @@ class Pong {
             uniformBuffersMapped.clear();
 
             for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-                vk::DeviceSize bufferSize = sizeof(GraphicsUniformBufferObject);
+                vk::DeviceSize bufferSize = sizeof(UniformBufferObject);
                 vk::raii::Buffer buffer = nullptr;
                 vk::raii::DeviceMemory bufferMemory = nullptr;
                 createBuffer(
@@ -1230,78 +1027,6 @@ class Pong {
                 uniformBuffers.emplace_back(std::move(buffer));
                 uniformBuffersMemory.emplace_back(std::move(bufferMemory));
                 uniformBuffersMapped.emplace_back(uniformBuffersMemory[i].mapMemory(0, bufferSize));
-            }
-        }
-
-        void createComputeUniformBuffers() {
-            computeUniformBuffers.clear();
-            computeUniformBuffersMemory.clear();
-            computeUniformBuffersMapped.clear();
-
-            for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-                vk::DeviceSize bufferSize = sizeof(ComputeUniformBufferObject);
-                vk::raii::Buffer buffer = nullptr;
-                vk::raii::DeviceMemory bufferMemory = nullptr;
-                createBuffer(
-                    bufferSize, 
-                    vk::BufferUsageFlagBits::eUniformBuffer, 
-                    vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-                    buffer,
-                    bufferMemory
-                );
-                computeUniformBuffers.emplace_back(std::move(buffer));
-                computeUniformBuffersMemory.emplace_back(std::move(bufferMemory));
-                computeUniformBuffersMapped.emplace_back(computeUniformBuffersMemory[i].mapMemory(0, bufferSize));
-            }
-        }
-
-        void createShaderStorageBuffers() {
-            shaderStorageBuffers.clear();
-            shaderStorageBuffersMemory.clear();
-
-            std::default_random_engine randEng((unsigned)time(nullptr));
-            std::uniform_real_distribution<float> randDist(0.0f, 1.0f);
-
-            std::vector<Particle> particles(PARTICLE_COUNT);
-
-            for (Particle& particle : particles) {
-                float r = 0.25f * sqrtf(randDist(randEng));
-                float theta = randDist(randEng) * 2.0f * 3.14159265358979323846f;
-                float x = r * cosf(theta) * HEIGHT / WIDTH;
-                float y = r * sinf(theta);
-                particle.position = glm::vec2(x, y);
-                particle.velocity = glm::normalize(glm::vec2(x,y)) * 0.00025f;
-                particle.color = glm::vec4(randDist(randEng), randDist(randEng), randDist(randEng), 1.0f);
-            }
-
-            vk::raii::Buffer stagingBuffer = nullptr;
-            vk::raii::DeviceMemory stagingBufferMemory = nullptr;
-
-            vk::DeviceSize bufferSize = sizeof(Particle) * PARTICLE_COUNT;
-
-            createBuffer(
-                bufferSize,
-                vk::BufferUsageFlagBits::eTransferSrc,
-                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-                stagingBuffer, stagingBufferMemory
-            );
-
-            void* data = stagingBufferMemory.mapMemory(0, bufferSize);
-            memcpy(data, particles.data(), (size_t)bufferSize);
-            stagingBufferMemory.unmapMemory();
-
-            for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-                vk::raii::Buffer buffer = nullptr;
-                vk::raii::DeviceMemory memory = nullptr;
-                createBuffer(
-                    bufferSize,
-                    vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
-                    vk::MemoryPropertyFlagBits::eDeviceLocal,
-                    buffer, memory
-                );
-                copyBuffer(stagingBuffer, buffer, bufferSize);
-                shaderStorageBuffers.emplace_back(std::move(buffer));
-                shaderStorageBuffersMemory.emplace_back(std::move(memory));
             }
         }
 
@@ -1327,28 +1052,6 @@ class Pong {
             descriptorPool = vk::raii::DescriptorPool(device, poolInfo);
         }
 
-        void createComputeDescriptorPool() {
-            std::array poolSizes {
-                vk::DescriptorPoolSize{
-                    .type = vk::DescriptorType::eUniformBuffer,
-                    .descriptorCount = MAX_FRAMES_IN_FLIGHT,
-                },
-                vk::DescriptorPoolSize{
-                    .type = vk::DescriptorType::eStorageBuffer,
-                    .descriptorCount = MAX_FRAMES_IN_FLIGHT * 2,
-                },
-            };
-
-            vk::DescriptorPoolCreateInfo poolInfo{
-                .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-                .maxSets = MAX_FRAMES_IN_FLIGHT,
-                .poolSizeCount = poolSizes.size(),
-                .pPoolSizes = poolSizes.data()
-            };
-
-            computeDescriptorPool = vk::raii::DescriptorPool(device, poolInfo);
-        }
-
         void createDescriptorSets() {
             std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, *descriptorSetLayout);
             vk::DescriptorSetAllocateInfo allocInfo{
@@ -1363,7 +1066,7 @@ class Pong {
                 vk::DescriptorBufferInfo bufferInfo{
                     .buffer = uniformBuffers[i],
                     .offset = 0,
-                    .range = sizeof(GraphicsUniformBufferObject)
+                    .range = sizeof(UniformBufferObject)
                 };
                 vk::DescriptorImageInfo imageInfo{
                     .sampler = textureSampler,
@@ -1392,60 +1095,6 @@ class Pong {
             }
         }
 
-        void createComputeDescriptorSets() {
-            std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, *computeDescriptorSetLayout);
-            vk::DescriptorSetAllocateInfo allocInfo{
-                .descriptorPool = computeDescriptorPool,
-                .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
-                .pSetLayouts = layouts.data()
-            };
-            computeDescriptorSets = device.allocateDescriptorSets(allocInfo);
-            for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-                vk::DescriptorBufferInfo uniformBufferInfo{
-                    .buffer = computeUniformBuffers[i], // TODO: use different buffers for compute
-                    .offset = 0,
-                    .range = sizeof(ComputeUniformBufferObject)
-                };
-                vk::DescriptorBufferInfo storageBufferInfoLastFrame{
-                    .buffer = shaderStorageBuffers[(i - 1) % MAX_FRAMES_IN_FLIGHT],
-                    .offset = 0,
-                    .range = sizeof(Particle) * PARTICLE_COUNT
-                };
-                vk::DescriptorBufferInfo storageBufferInfoCurrentFrame{
-                    .buffer = shaderStorageBuffers[i],
-                    .offset = 0,
-                    .range = sizeof(Particle) * PARTICLE_COUNT
-                };
-                std::array descriptorWrites{
-                    vk::WriteDescriptorSet{
-                        .dstSet = computeDescriptorSets[i],
-                        .dstBinding = 0,
-                        .dstArrayElement = 0,
-                        .descriptorCount = 1,
-                        .descriptorType = vk::DescriptorType::eUniformBuffer,
-                        .pBufferInfo = &uniformBufferInfo
-                    },
-                    vk::WriteDescriptorSet{
-                        .dstSet = computeDescriptorSets[i],
-                        .dstBinding = 1,
-                        .dstArrayElement = 0,
-                        .descriptorCount = 1,
-                        .descriptorType = vk::DescriptorType::eStorageBuffer,
-                        .pBufferInfo = &storageBufferInfoLastFrame
-                    },
-                    vk::WriteDescriptorSet{
-                        .dstSet = computeDescriptorSets[i],
-                        .dstBinding = 2,
-                        .dstArrayElement = 0,
-                        .descriptorCount = 1,
-                        .descriptorType = vk::DescriptorType::eStorageBuffer,
-                        .pBufferInfo = &storageBufferInfoCurrentFrame
-                    },
-                };
-                device.updateDescriptorSets(descriptorWrites, {});
-            }
-        }
-
         void createCommandBuffers() {
             vk::CommandBufferAllocateInfo allocInfo{
                 .commandPool = commandPool,
@@ -1454,18 +1103,12 @@ class Pong {
             };
 
             frameCommandBuffers = vk::raii::CommandBuffers(device, allocInfo);
-            computeCommandBuffers = vk::raii::CommandBuffers(device, allocInfo);
         }
 
         void createSyncObjects() {
-            assert(renderFinishedSemaphores.empty() && presentCompleteSemaphores.empty() && drawFences.empty());
-
-            for (size_t i = 0; i < swapchainImages.size(); i++) {
-                renderFinishedSemaphores.emplace_back(device, vk::SemaphoreCreateInfo());
-            }
+            assert(drawFences.empty());
 
             for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-                presentCompleteSemaphores.emplace_back(device, vk::SemaphoreCreateInfo());
                 vk::FenceCreateInfo fenceInfo{};
                 drawFences.emplace_back(device, fenceInfo);
             }
@@ -1475,7 +1118,7 @@ class Pong {
                 .initialValue = 0
             };
 
-            timelineSemaphore = vk::raii::Semaphore(device, { .pNext = &semaphoreType });
+            semaphore = vk::raii::Semaphore(device, { .pNext = &semaphoreType });
         }
 
         // Helper functions
