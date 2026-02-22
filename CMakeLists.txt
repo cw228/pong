@@ -17,7 +17,7 @@ find_path(STB_INCLUDE_DIR stb/stb_image.h REQUIRED)
 find_path(TINYOBJLOADER_INCLUDE_DIR tiny_obj_loader.h REQUIRED)
 
 # Create executable
-add_executable(pong src/main.cpp src/libs.cpp)
+add_executable(pong src/main.cpp src/renderer.cpp src/libs.cpp)
 
 # Link libraries
 target_link_libraries(pong PRIVATE

@@ -1,0 +1,15 @@
+entities:
+  - id: paddle
+    model: viking_room.obj
+  - id: ball
+    model: viking_room.obj
+    position: [0.0, 0.0, 0.0]
+    rotation: 0
+    scale: 0.2
+instances:
+  - entity: paddle
+    position: [-0.8, 0.0, 0.0]
+    rotation: 0
+    scale: 0.5
+  - entity: paddle
+

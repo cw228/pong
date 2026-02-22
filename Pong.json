@@ -1,0 +1,64 @@
+{
+  "entities": {
+    "0": {
+      "id": 0,
+      "model": 0,
+      "name": "Room",
+      "texture": 0
+    }
+  },
+  "instances": {
+    "0": {
+      "entity": 0,
+      "id": 0,
+      "level": 0,
+      "position": {
+        "x": -0.8,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": 0,
+      "scale": 1,
+      "velocity": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    },
+    "1": {
+      "entity": 0,
+      "id": 1,
+      "level": 0,
+      "position": {
+        "x": 0.8,
+        "y": 0,
+        "z": 0
+      },
+      "rotation": 0,
+      "scale": 1,
+      "velocity": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    }
+  },
+  "levels": {
+    "0": {
+      "id": 0,
+      "name": "Main"
+    }
+  },
+  "models": {
+    "0": {
+      "filename": "viking_room.obj",
+      "id": 0
+    }
+  },
+  "textures": {
+    "0": {
+      "filename": "viking_room.png",
+      "id": 0
+    }
+  }
+}

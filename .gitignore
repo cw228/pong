@@ -19,3 +19,5 @@ compile_commands.json
 
 # OS
 .DS_Store
+
+__pycache__/
