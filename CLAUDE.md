@@ -24,13 +24,17 @@ cmake -B build -G Ninja -DCMAKE_OSX_SYSROOT=$(xcrun --show-sdk-path)
 
 ## Architecture
 
-Single-file Vulkan application in `src/main.cpp` using:
-- **C++23** with designated initializers for Vulkan structs
-- **Vulkan-Hpp RAII wrappers** (`vk::raii::*`) for automatic resource cleanup
-- **GLFW** for window management and Vulkan surface creation
+Vulkan application split across:
+- **`src/main.cpp`** — owns GLFW init, `Window` creation, and the main loop; calls `renderer.drawFrame()` per frame and `renderer.waitIdle()` before exit
+- **`src/renderer.cpp`** / **`src/renderer.h`** — `Renderer` class encapsulates all Vulkan setup; takes `Window&` (borrows, does not own)
+- **`src/window.h`** — `Window` struct wrapping `GLFWwindow*`; destructor calls `glfwDestroyWindow` + `glfwTerminate`
 
-The `Pong` class encapsulates all Vulkan setup with initialization flow:
-`initWindow()` → `createInstance()` → `setupDebugMessenger()` → `createSurface()` → `pickPhysicalDevice()` → `findQueueFamilies()` → `createLogicalDevice()` → `getQueues()` → `createSwapchain()` → `createImageViews()` → `createDescriptorSetLayout()` → `createGraphicsPipeline()` → `createCommandPool()` → `createVertexBuffer()` → `createIndexBuffer()` → `createUniformBuffers()` → `createCommandBuffers()` → `createSyncObjects()`
+Uses **C++23** with designated initializers for Vulkan structs, **Vulkan-Hpp RAII wrappers** (`vk::raii::*`), and **GLFW** for windowing.
+
+**Destruction order:** Declare `Window window` before `Renderer renderer` so that `renderer` is destroyed first (reverse construction order). Safe because `Renderer` holds `Window&` — the referent must outlive the reference holder.
+
+**`Renderer` constructor flow:** Takes `Window&`, calls `glfwSetWindowUserPointer` + `glfwSetFramebufferSizeCallback`, then `initVulkan()`:
+`createInstance()` → `setupDebugMessenger()` → `createSurface()` → `pickPhysicalDevice()` → `findQueueFamilies()` → `createLogicalDevice()` → `getQueues()` → `createSwapchain()` → `createSwapchainImageViews()` → `createDescriptorSetLayout()` → `createGraphicsPipeline()` → `createCommandPool()` → `createColorResources()` → `createDepthResources()` → `createTextureImage()` → `createTextureImageView()` → `createTextureSampler()` → `loadModel()` → `createVertexBuffer()` → `createIndexBuffer()` → `createUniformBuffers()` → `createDescriptorPool()` → `createDescriptorSets()` → `createCommandBuffers()` → `createSyncObjects()`
 
 ## Shaders
 
@@ -145,6 +149,8 @@ rm -f build/CMakeFiles/pong.dir/cmake_pch.hxx.pch && cmake --build build
 ```
 
 **GPU hang / system freeze:** If running the app freezes the system (black screen, blinking cursor), the GPU is hanging. Common cause: shader accesses a descriptor (UBO, texture) that was never bound. Always ensure descriptor sets are created, updated, and bound before draw calls that use them.
+
+**`window.h` missing `#pragma once`:** If `window.h` is included from both `renderer.h` and `main.cpp`, you'll get a `redefinition of 'Window'` error. The fix is to add `#pragma once` at the top of `window.h`.
 
 ## Dependencies
 

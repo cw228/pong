@@ -1,5 +1,7 @@
 #pragma once
 
+#include "window.h"
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -10,8 +12,6 @@
 #include <glm/glm.hpp>
 #include <glm/gtx/hash.hpp>
 
-constexpr uint32_t WIDTH = 800;
-constexpr uint32_t HEIGHT = 600;
 constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 inline const std::string MODEL_PATH = "models/viking_room.obj";
 inline const std::string TEXTURE_PATH = "textures/viking_room.png";
@@ -31,15 +31,6 @@ constexpr bool macOS = true;
 #else
 constexpr bool macOS = false;
 #endif
-
-struct Window {
-    GLFWwindow* handle = nullptr;
-    operator GLFWwindow*() const { return handle; }
-    ~Window() {
-        if (handle) glfwDestroyWindow(handle);
-        glfwTerminate();
-    }
-};
 
 struct QueueFamilyIndices {
     uint32_t graphicsIndex;
@@ -106,11 +97,12 @@ struct UniformBufferObject {
 
 class Renderer {
 public:
-    Renderer();
-    void run();
+    Renderer(Window& window);
+    ~Renderer();
+    void drawFrame();
 
 private:
-    Window window;
+    Window& window;
     vk::raii::Context context;
     vk::raii::Instance instance = nullptr;
     vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;
@@ -171,10 +163,7 @@ private:
     vk::SampleCountFlagBits msaaSamples = vk::SampleCountFlagBits::e1;
     // mk:members
 
-    void initWindow();
     void initVulkan();
-    void mainLoop();
-    void drawFrame();
     void updateUniformBuffer(uint32_t currentFrameIndex);
     void recordFrameCommandBuffer(uint32_t imageIndex);
 

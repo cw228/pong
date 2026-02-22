@@ -13,26 +13,14 @@
 #include <stb/stb_image.h>
 #include <tiny_obj_loader.h>
 
-Renderer::Renderer() {
-    initWindow();
-    initVulkan();
-    mainLoop();
-}
-
-void Renderer::run() {
-    mainLoop();
-}
-
-void Renderer::initWindow() {
-    glfwInit();
-
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHintString(GLFW_WAYLAND_APP_ID, "game");
-
-    window.handle = glfwCreateWindow(WIDTH, HEIGHT, "Pong", nullptr, nullptr);
-
+Renderer::Renderer(Window& window) : window(window) {
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
+    initVulkan();
+}
+
+Renderer::~Renderer() {
+    device.waitIdle();
 }
 
 void Renderer::initVulkan() {
@@ -61,18 +49,6 @@ void Renderer::initVulkan() {
     createDescriptorSets();
     createCommandBuffers();
     createSyncObjects();
-}
-
-void Renderer::mainLoop() {
-    while (true) {
-        glfwPollEvents();
-        if (glfwWindowShouldClose(window)) {
-            break;
-        }
-        drawFrame();
-    }
-
-    device.waitIdle();
 }
 
 void Renderer::drawFrame() {
