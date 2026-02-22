@@ -25,13 +25,15 @@ cmake -B build -G Ninja -DCMAKE_OSX_SYSROOT=$(xcrun --show-sdk-path)
 ## Architecture
 
 Vulkan application split across:
-- **`src/main.cpp`** — owns GLFW init, `Window` creation, and the main loop; calls `renderer.drawFrame()` per frame and `renderer.waitIdle()` before exit
-- **`src/renderer.cpp`** / **`src/renderer.h`** — `Renderer` class encapsulates all Vulkan setup; takes `Window&` (borrows, does not own)
-- **`src/window.h`** — `Window` struct wrapping `GLFWwindow*`; destructor calls `glfwDestroyWindow` + `glfwTerminate`
+- **`src/main.cpp`** — constructs `Window` and `Renderer`, runs the main loop; `Renderer` destructor handles `waitIdle()` implicitly
+- **`src/renderer.cpp`** / **`src/renderer.h`** — `Renderer` class encapsulates all Vulkan setup; takes `Window&` (borrows, does not own); destructor calls `device.waitIdle()` before RAII members are destroyed
+- **`src/window.h`** — `Window` struct wrapping `GLFWwindow*`; constructor takes `(int width, int height)` and owns GLFW init + window creation; destructor calls `glfwDestroyWindow` + `glfwTerminate`
 
 Uses **C++23** with designated initializers for Vulkan structs, **Vulkan-Hpp RAII wrappers** (`vk::raii::*`), and **GLFW** for windowing.
 
-**Destruction order:** Declare `Window window` before `Renderer renderer` so that `renderer` is destroyed first (reverse construction order). Safe because `Renderer` holds `Window&` — the referent must outlive the reference holder.
+**Destruction order:** Declare `Window window` before `Renderer renderer` so that `renderer` is destroyed first (reverse construction order). Safe because `Renderer` holds `Window&` — the referent must outlive the reference holder. `Renderer::~Renderer()` calls `device.waitIdle()` before any RAII members are destroyed — the destructor body runs before member destructors, so the device is always idle before cleanup.
+
+**`Window` is outside the try block in `main.cpp`** intentionally: GLFW calls don't throw C++ exceptions (they return error codes), and `Window` must outlive `Renderer` which may throw during construction. Both locals would still be destroyed in the right order inside a try block, but keeping `Window` outside makes the lifetime relationship explicit.
 
 **`Renderer` constructor flow:** Takes `Window&`, calls `glfwSetWindowUserPointer` + `glfwSetFramebufferSizeCallback`, then `initVulkan()`:
 `createInstance()` → `setupDebugMessenger()` → `createSurface()` → `pickPhysicalDevice()` → `findQueueFamilies()` → `createLogicalDevice()` → `getQueues()` → `createSwapchain()` → `createSwapchainImageViews()` → `createDescriptorSetLayout()` → `createGraphicsPipeline()` → `createCommandPool()` → `createColorResources()` → `createDepthResources()` → `createTextureImage()` → `createTextureImageView()` → `createTextureSampler()` → `loadModel()` → `createVertexBuffer()` → `createIndexBuffer()` → `createUniformBuffers()` → `createDescriptorPool()` → `createDescriptorSets()` → `createCommandBuffers()` → `createSyncObjects()`
