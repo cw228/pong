@@ -1,6 +1,7 @@
 #pragma once
 
 #include "window.h"
+#include "gamestate.h"
 
 #include <cstdint>
 #include <string>
@@ -95,14 +96,32 @@ struct UniformBufferObject {
     alignas(16) glm::mat4 projection;
 };
 
+struct RenderEntity {
+    int32_t vertexOffset;
+    int32_t indexOffset;
+    int32_t vertexCount;
+    int32_t indexCount;
+};
+
+struct RenderInstance {
+    glm::mat4 modelMatrix;
+};
+
+struct RenderState {
+    std::unordered_map<int, RenderEntity> entities;
+    std::unordered_map<int, std::unordered_map<int, RenderInstance>> entityInstances;
+};
+
 class Renderer {
 public:
-    Renderer(Window& window);
+    Renderer(Window& window, GameState& gameState);
     ~Renderer();
-    void drawFrame();
+    void drawFrame(RenderState& renderState);
 
 private:
     Window& window;
+    GameState& gameState;
+    RenderState renderState;
     vk::raii::Context context;
     vk::raii::Instance instance = nullptr;
     vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;
@@ -163,6 +182,7 @@ private:
     vk::SampleCountFlagBits msaaSamples = vk::SampleCountFlagBits::e1;
     // mk:members
 
+    void createRenderState();
     void initVulkan();
     void updateUniformBuffer(uint32_t currentFrameIndex);
     void recordFrameCommandBuffer(uint32_t imageIndex);
@@ -184,7 +204,7 @@ private:
     void createTextureImage();
     void createTextureImageView();
     void createTextureSampler();
-    void loadModel();
+    void loadModel(std::string& path);
     void createVertexBuffer();
     void createIndexBuffer();
     void createUniformBuffers();

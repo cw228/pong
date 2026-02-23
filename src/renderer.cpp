@@ -1,4 +1,5 @@
 #include "renderer.h"
+#include "gamestate.h"
 
 #include <iostream>
 #include <cstdlib>
@@ -13,9 +14,10 @@
 #include <stb/stb_image.h>
 #include <tiny_obj_loader.h>
 
-Renderer::Renderer(Window& window) : window(window) {
+Renderer::Renderer(Window& window, GameState& initialGameState) : window(window), gameState(initialGameState) {
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
+    createRenderState();
     initVulkan();
 }
 
@@ -41,7 +43,6 @@ void Renderer::initVulkan() {
     createTextureImage();
     createTextureImageView();
     createTextureSampler();
-    loadModel();
     createVertexBuffer();
     createIndexBuffer();
     createUniformBuffers();
@@ -51,7 +52,7 @@ void Renderer::initVulkan() {
     createSyncObjects();
 }
 
-void Renderer::drawFrame() {
+void Renderer::drawFrame(RenderState& renderState) {
     vk::Result fenceResult = device.waitForFences(*drawFences[frameIndex], vk::True, UINT64_MAX);
 
     if (fenceResult != vk::Result::eSuccess) {
@@ -109,6 +110,33 @@ void Renderer::drawFrame() {
     }
 
     frameIndex = (frameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
+}
+
+void Renderer::createRenderState() {
+    for (auto& [entityId, entity] : gameState.entities) {
+        RenderEntity renderEntity{};
+        renderEntity.vertexOffset = vertices.size();
+        renderEntity.indexOffset = indices.size();
+        Model model = gameState.models[entity.model];
+        loadModel(model.filename);
+        renderEntity.vertexCount = vertices.size() - renderEntity.vertexOffset;
+        renderEntity.indexCount = indices.size() - renderEntity.indexOffset;
+        renderState.entities[entityId] = renderEntity;
+    }
+
+    // In the future, maybe only load the active level. Right now there's only 1 anyway
+    for (auto& [levelId, level] : gameState.levels) {
+        for (auto& [entityId, instances] : level.entity_instances) {
+            for (auto& [instanceId, instance] : instances) {
+                glm::mat4 modelMatrix = glm::scale(glm::mat4(1.0f), glm::vec3(instance.scale));
+                modelMatrix = glm::rotate(modelMatrix, glm::radians(instance.rotation), glm::vec3(0.0f, 0.0f, 1.0f));
+                modelMatrix = glm::translate(modelMatrix, instance.position);
+                RenderInstance renderInstance{};
+                renderInstance.modelMatrix = modelMatrix;
+                renderState.entityInstances[entityId][instanceId] = renderInstance;
+            }
+        }
+    }
 }
 
 void Renderer::updateUniformBuffer(uint32_t currentFrameIndex) {
@@ -709,13 +737,13 @@ void Renderer::createTextureSampler() {
     textureSampler = vk::raii::Sampler(device, samplerInfo);
 }
 
-void Renderer::loadModel() {
+void Renderer::loadModel(std::string& path) {
     tinyobj::attrib_t attrib;
     std::vector<tinyobj::shape_t> shapes;
     std::vector<tinyobj::material_t> materials;
     std::string warn, err;
 
-    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, MODEL_PATH.c_str())) {
+    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, path.c_str())) {
         throw std::runtime_error(warn + err);
     }
 

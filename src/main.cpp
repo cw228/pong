@@ -1,16 +1,28 @@
 #include "renderer.h"
 #include "window.h"
+#include "gamestate.h"
 
 #include <iostream>
+
+void updateGameState(GameState& gameState) {
+}
+
+void updateRenderState(RenderState& renderState, GameState& gameState) {
+}
 
 int main() {
     Window window(800, 600);
 
     try {
-        Renderer renderer(window);
+        GameState gameState = loadGameState("Pong.json");
+        Renderer renderer(window, gameState);
+        RenderState renderState;
 
-        while (!window.closed()) {
-            renderer.drawFrame();
+        while (!glfwWindowShouldClose(window)) {
+            glfwPollEvents();
+            updateGameState(gameState);
+            updateRenderState(renderState, gameState);
+            renderer.drawFrame(renderState);
         }
 
     } catch (const std::exception& e) {
@@ -20,3 +32,4 @@ int main() {
 
     return EXIT_SUCCESS;
 }
+

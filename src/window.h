@@ -14,11 +14,6 @@ struct Window {
 
     operator GLFWwindow*() const { return handle; }
 
-    bool closed() {
-        glfwPollEvents();
-        return glfwWindowShouldClose(handle);
-    }
-
     ~Window() {
         glfwDestroyWindow(handle);
         glfwTerminate();
