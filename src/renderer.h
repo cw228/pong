@@ -98,9 +98,11 @@ struct UniformBufferObject {
 
 struct RenderEntity {
     int32_t vertexOffset;
-    int32_t indexOffset;
-    int32_t vertexCount;
-    int32_t indexCount;
+    uint32_t vertexCount;
+    uint32_t firstIndex;
+    uint32_t indexCount;
+    uint32_t firstInstance;
+    uint32_t instanceCount;
 };
 
 struct RenderInstance {
@@ -109,7 +111,7 @@ struct RenderInstance {
 
 struct RenderState {
     std::unordered_map<int, RenderEntity> entities;
-    std::unordered_map<int, std::unordered_map<int, RenderInstance>> entityInstances;
+    std::vector<RenderInstance> instances;
 };
 
 class Renderer {

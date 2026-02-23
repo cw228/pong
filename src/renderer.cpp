@@ -116,24 +116,26 @@ void Renderer::createRenderState() {
     for (auto& [entityId, entity] : gameState.entities) {
         RenderEntity renderEntity{};
         renderEntity.vertexOffset = vertices.size();
-        renderEntity.indexOffset = indices.size();
+        renderEntity.firstIndex = indices.size();
         Model model = gameState.models[entity.model];
         loadModel(model.filename);
         renderEntity.vertexCount = vertices.size() - renderEntity.vertexOffset;
-        renderEntity.indexCount = indices.size() - renderEntity.indexOffset;
+        renderEntity.indexCount = indices.size() - renderEntity.firstIndex;
         renderState.entities[entityId] = renderEntity;
     }
 
     // In the future, maybe only load the active level. Right now there's only 1 anyway
     for (auto& [levelId, level] : gameState.levels) {
         for (auto& [entityId, instances] : level.entity_instances) {
+            renderState.entities[entityId].firstInstance = renderState.instances.size();
+            renderState.entities[entityId].instanceCount = instances.size();
             for (auto& [instanceId, instance] : instances) {
                 glm::mat4 modelMatrix = glm::scale(glm::mat4(1.0f), glm::vec3(instance.scale));
                 modelMatrix = glm::rotate(modelMatrix, glm::radians(instance.rotation), glm::vec3(0.0f, 0.0f, 1.0f));
                 modelMatrix = glm::translate(modelMatrix, instance.position);
                 RenderInstance renderInstance{};
                 renderInstance.modelMatrix = modelMatrix;
-                renderState.entityInstances[entityId][instanceId] = renderInstance;
+                renderState.instances.push_back(renderInstance);
             }
         }
     }
