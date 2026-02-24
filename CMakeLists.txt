@@ -20,7 +20,7 @@ find_package(nlohmann_json REQUIRED)
 find_package(Python3 REQUIRED)
 
 # Create executable
-add_executable(pong src/main.cpp src/renderer.cpp src/gamestate.cpp src/libs.cpp)
+add_executable(pong src/main.cpp src/renderer.cpp src/gamestate.cpp src/inputstate.cpp src/libs.cpp)
 
 # Link libraries
 target_link_libraries(pong PRIVATE

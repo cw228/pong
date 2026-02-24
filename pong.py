@@ -6,12 +6,19 @@ LEFT = -1
 RIGHT = 1
 
 def main():
-    viking_room_model = Model("models/viking_room.obj")
+    # viking_room_model = Model("models/viking_room.obj")
     viking_room_texture = Texture("textures/viking_room.png")
-    room = Entity("Room", viking_room_model.id, viking_room_texture.id)
+
+    ball_model = Model("models/ball.obj") 
+    paddle_model = Model("models/paddle.obj")
+
+    paddle = Entity("Paddle", paddle_model.id, viking_room_texture.id)
+    ball = Entity("Ball", ball_model.id, viking_room_texture.id)
+
     main = Level("Main")
-    Instance(main.id, room.id, position=Vector3(-0.8, 0, 0))
-    Instance(main.id, room.id, position=Vector3(0.8, 0, 0))
+
+    Instance(main.id, paddle.id, position=Vector3(-0.5, 0, 0))
+    Instance(main.id, ball.id, position=Vector3.zero())
 
     export("Pong.json")
 

@@ -5,12 +5,11 @@ struct VertexInput {
 };
 
 struct UniformBuffer {
-    float4x4 model;
     float4x4 view;
     float4x4 projection;
 };
 
-ConstantBuffer<UniformBuffer> ubo;
+[vk::binding(0, 0)] ConstantBuffer<UniformBuffer> ubo;
 
 struct VertexOutput {
     float4 position : SV_Position;
@@ -18,16 +17,19 @@ struct VertexOutput {
     float2 textureCoordinates; 
 };
 
+[vk::binding(2, 0)] StructuredBuffer<float4x4> modelMatrices;
+
 [shader("vertex")]
-VertexOutput vertMain(VertexInput input) {
+VertexOutput vertMain(VertexInput input, int instanceId : SV_InstanceID, int firstInstance : SV_StartInstanceLocation) {
     VertexOutput output;
-    output.position = mul(ubo.projection, mul(ubo.view, mul(ubo.model, float4(input.position, 1.0))));
+    float4x4 model = modelMatrices[firstInstance + instanceId];
+    output.position = mul(ubo.projection, mul(ubo.view, mul(model, float4(input.position, 1.0))));
     output.color = input.color;
     output.textureCoordinates = input.textureCoordinates;
     return output;
 }
 
-Sampler2D texture;
+[vk::binding(1, 0)] Sampler2D texture;
 
 [shader("fragment")]
 float4 fragMain(VertexOutput vertex) : SV_Target {

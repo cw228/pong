@@ -3,26 +3,27 @@
 #include "gamestate.h"
 
 #include <iostream>
-
-void updateGameState(GameState& gameState) {
-}
-
-void updateRenderState(RenderState& renderState, GameState& gameState) {
-}
+#include <chrono>
 
 int main() {
-    Window window(800, 600);
+    Window window{800, 600};
+    InputState inputState;
 
     try {
         GameState gameState = loadGameState("Pong.json");
         Renderer renderer(window, gameState);
-        RenderState renderState;
+
+        auto lastTime = std::chrono::high_resolution_clock::now();
 
         while (!glfwWindowShouldClose(window)) {
+            auto currentTime = std::chrono::high_resolution_clock::now();
+            float deltaTime = std::chrono::duration<float>(currentTime - lastTime).count();
+            lastTime = currentTime;
+
             glfwPollEvents();
-            updateGameState(gameState);
-            updateRenderState(renderState, gameState);
-            renderer.drawFrame(renderState);
+            updateInputState(inputState, window);
+            updateGameState(gameState, inputState, deltaTime);
+            renderer.drawFrame(gameState);
         }
 
     } catch (const std::exception& e) {

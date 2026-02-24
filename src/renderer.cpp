@@ -14,10 +14,10 @@
 #include <stb/stb_image.h>
 #include <tiny_obj_loader.h>
 
-Renderer::Renderer(Window& window, GameState& initialGameState) : window(window), gameState(initialGameState) {
+Renderer::Renderer(Window& window, GameState& gameState) : window(window) {
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
-    createRenderState();
+    loadEntities(gameState);
     initVulkan();
 }
 
@@ -46,13 +46,27 @@ void Renderer::initVulkan() {
     createVertexBuffer();
     createIndexBuffer();
     createUniformBuffers();
+    createStorageBuffers();
     createDescriptorPool();
     createDescriptorSets();
     createCommandBuffers();
     createSyncObjects();
 }
 
-void Renderer::drawFrame(RenderState& renderState) {
+void Renderer::loadEntities(GameState& gameState) {
+    for (auto& [entityId, entity] : gameState.entities) {
+        RenderEntity renderEntity{};
+        renderEntity.vertexOffset = vertices.size();
+        renderEntity.firstIndex = indices.size();
+        Model model = gameState.models[entity.model];
+        loadModel(model.filename);
+        renderEntity.vertexCount = vertices.size() - renderEntity.vertexOffset;
+        renderEntity.indexCount = indices.size() - renderEntity.firstIndex;
+        renderState.entities[entityId] = renderEntity;
+    }
+}
+
+void Renderer::drawFrame(GameState& gameState) {
     vk::Result fenceResult = device.waitForFences(*drawFences[frameIndex], vk::True, UINT64_MAX);
 
     if (fenceResult != vk::Result::eSuccess) {
@@ -70,7 +84,9 @@ void Renderer::drawFrame(RenderState& renderState) {
         throw std::runtime_error("failed to aquire swapchain image");
     }
 
+    updateRenderState(gameState);
     updateUniformBuffer(frameIndex);
+    updateStorageBuffer(frameIndex);
 
     // ok to record command buffer now because command buffer execution is complete when fence was signaled
     recordFrameCommandBuffer(imageIndex);
@@ -112,27 +128,18 @@ void Renderer::drawFrame(RenderState& renderState) {
     frameIndex = (frameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
-void Renderer::createRenderState() {
-    for (auto& [entityId, entity] : gameState.entities) {
-        RenderEntity renderEntity{};
-        renderEntity.vertexOffset = vertices.size();
-        renderEntity.firstIndex = indices.size();
-        Model model = gameState.models[entity.model];
-        loadModel(model.filename);
-        renderEntity.vertexCount = vertices.size() - renderEntity.vertexOffset;
-        renderEntity.indexCount = indices.size() - renderEntity.firstIndex;
-        renderState.entities[entityId] = renderEntity;
-    }
-
+void Renderer::updateRenderState(GameState& gameState) {
+    renderState.instances.clear();
     // In the future, maybe only load the active level. Right now there's only 1 anyway
     for (auto& [levelId, level] : gameState.levels) {
         for (auto& [entityId, instances] : level.entity_instances) {
             renderState.entities[entityId].firstInstance = renderState.instances.size();
             renderState.entities[entityId].instanceCount = instances.size();
             for (auto& [instanceId, instance] : instances) {
-                glm::mat4 modelMatrix = glm::scale(glm::mat4(1.0f), glm::vec3(instance.scale));
+                // std::println("updateRenderState() entityId: {} positionX: {} positionY: {} instanceIndex: {}", entityId, instance.position.x, instance.position.y, renderState.instances.size());
+                glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), instance.position);
                 modelMatrix = glm::rotate(modelMatrix, glm::radians(instance.rotation), glm::vec3(0.0f, 0.0f, 1.0f));
-                modelMatrix = glm::translate(modelMatrix, instance.position);
+                modelMatrix = glm::scale(modelMatrix, glm::vec3(instance.scale));
                 RenderInstance renderInstance{};
                 renderInstance.modelMatrix = modelMatrix;
                 renderState.instances.push_back(renderInstance);
@@ -142,14 +149,7 @@ void Renderer::createRenderState() {
 }
 
 void Renderer::updateUniformBuffer(uint32_t currentFrameIndex) {
-    static std::chrono::time_point startTime = std::chrono::high_resolution_clock::now();
-
-    std::chrono::time_point currentTime = std::chrono::high_resolution_clock::now();
-    float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
-
     UniformBufferObject ubo{};
-    // ubo.model = glm::rotate(glm::mat4(1.0f), time*glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    ubo.model = glm::mat4(1.0f);
     // ubo.view = glm::lookAt(glm::vec3(0.0f, 0.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
     ubo.view = glm::mat4(1.0f); // Don't need for 2D?
     // ubo.projection = glm::perspective(glm::radians(45.0f), static_cast<float>(swapchainExtent.width) / static_cast<float>(swapchainExtent.height), 0.1f, 10.0f);
@@ -157,6 +157,10 @@ void Renderer::updateUniformBuffer(uint32_t currentFrameIndex) {
 
     ubo.projection[1][1] *= -1;
     memcpy(uniformBuffersMapped[currentFrameIndex], &ubo, sizeof(ubo));
+}
+
+void Renderer::updateStorageBuffer(uint32_t currentFrameIndex) {
+    memcpy(storageBuffersMapped[currentFrameIndex], renderState.instances.data(), sizeof(RenderInstance) * renderState.instances.size());
 }
 
 void Renderer::recordFrameCommandBuffer(uint32_t imageIndex) {
@@ -256,7 +260,12 @@ void Renderer::recordFrameCommandBuffer(uint32_t imageIndex) {
 
     commandBuffer.setViewport(0, viewport);
     commandBuffer.setScissor(0, scissor);
-    commandBuffer.drawIndexed(indices.size(), 1, 0, 0, 0);
+
+    for (auto& [entityId, e] : renderState.entities) {
+        // std::println("draw entityId: {} indexCount: {} instanceCount: {} firstIndex: {} vertexOffset: {} firstInstance: {}", entityId, e.indexCount, e.instanceCount, e.firstIndex, e.vertexOffset, e.firstInstance);
+        commandBuffer.drawIndexed(e.indexCount, e.instanceCount, e.firstIndex, e.vertexOffset, e.firstInstance);
+    }
+
     commandBuffer.endRendering();
 
     recordImageLayoutTransition(
@@ -483,6 +492,12 @@ void Renderer::createDescriptorSetLayout() {
             .descriptorType = vk::DescriptorType::eCombinedImageSampler,
             .descriptorCount = 1,
             .stageFlags = vk::ShaderStageFlagBits::eFragment
+        },
+        vk::DescriptorSetLayoutBinding{
+            .binding = 2,
+            .descriptorType = vk::DescriptorType::eStorageBuffer,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eVertex
         }
     };
 
@@ -769,11 +784,13 @@ void Renderer::loadModel(std::string& path) {
             vertex.color = {1.0f, 1.0f, 1.0f};
 
             if (uniqueVertices.count(vertex) == 0) {
-                uniqueVertices[vertex] = static_cast<uint32_t>(vertices.size());
+                uniqueVertices[vertex] = static_cast<uint32_t>(uniqueVertices.size());
                 vertices.push_back(vertex);
             }
 
             indices.push_back(uniqueVertices[vertex]);
+
+            // std::println("vindx: {} indx: {} uvvize: {} vsize: {} {}", index.vertex_index, uniqueVertices[vertex], uniqueVertices.size(), vertices.size(), path);
         }
     }
 }
@@ -852,6 +869,28 @@ void Renderer::createUniformBuffers() {
     }
 }
 
+void Renderer::createStorageBuffers() {
+    storageBuffers.clear();
+    storageBuffersMemory.clear();
+    storageBuffersMapped.clear();
+
+    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        vk::DeviceSize bufferSize = sizeof(RenderInstance) * MAX_INSTANCES;
+        vk::raii::Buffer buffer = nullptr;
+        vk::raii::DeviceMemory bufferMemory = nullptr;
+        createBuffer(
+            bufferSize,
+            vk::BufferUsageFlagBits::eStorageBuffer,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+            buffer,
+            bufferMemory
+        );
+        storageBuffers.emplace_back(std::move(buffer));
+        storageBuffersMemory.emplace_back(std::move(bufferMemory));
+        storageBuffersMapped.emplace_back(storageBuffersMemory[i].mapMemory(0, bufferSize));
+    }
+}
+
 void Renderer::createDescriptorPool() {
     std::array poolSizes {
         vk::DescriptorPoolSize{
@@ -860,6 +899,10 @@ void Renderer::createDescriptorPool() {
         },
         vk::DescriptorPoolSize{
             .type = vk::DescriptorType::eCombinedImageSampler,
+            .descriptorCount = MAX_FRAMES_IN_FLIGHT,
+        },
+        vk::DescriptorPoolSize{
+            .type = vk::DescriptorType::eStorageBuffer,
             .descriptorCount = MAX_FRAMES_IN_FLIGHT,
         },
     };
@@ -885,7 +928,7 @@ void Renderer::createDescriptorSets() {
     descriptorSets = device.allocateDescriptorSets(allocInfo);
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        vk::DescriptorBufferInfo bufferInfo{
+        vk::DescriptorBufferInfo uniformBufferInfo{
             .buffer = uniformBuffers[i],
             .offset = 0,
             .range = sizeof(UniformBufferObject)
@@ -895,6 +938,11 @@ void Renderer::createDescriptorSets() {
             .imageView = textureImageView,
             .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
         };
+        vk::DescriptorBufferInfo storageBufferInfo{
+            .buffer = storageBuffers[i],
+            .offset = 0,
+            .range = sizeof(RenderInstance) * MAX_INSTANCES
+        };
         std::array descriptorWrites{
             vk::WriteDescriptorSet{
                 .dstSet = descriptorSets[i],
@@ -902,7 +950,7 @@ void Renderer::createDescriptorSets() {
                 .dstArrayElement = 0,
                 .descriptorCount = 1,
                 .descriptorType = vk::DescriptorType::eUniformBuffer,
-                .pBufferInfo = &bufferInfo
+                .pBufferInfo = &uniformBufferInfo
             },
             vk::WriteDescriptorSet{
                 .dstSet = descriptorSets[i],
@@ -911,6 +959,14 @@ void Renderer::createDescriptorSets() {
                 .descriptorCount = 1,
                 .descriptorType = vk::DescriptorType::eCombinedImageSampler,
                 .pImageInfo = &imageInfo
+            },
+            vk::WriteDescriptorSet{
+                .dstSet = descriptorSets[i],
+                .dstBinding = 2,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = vk::DescriptorType::eStorageBuffer,
+                .pBufferInfo = &storageBufferInfo
             },
         };
         device.updateDescriptorSets(descriptorWrites, {});

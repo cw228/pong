@@ -14,6 +14,7 @@
 #include <glm/gtx/hash.hpp>
 
 constexpr int MAX_FRAMES_IN_FLIGHT = 2;
+constexpr int MAX_INSTANCES = 100;
 inline const std::string MODEL_PATH = "models/viking_room.obj";
 inline const std::string TEXTURE_PATH = "textures/viking_room.png";
 
@@ -91,7 +92,6 @@ namespace std {
 
 // Explicit alignment for shader
 struct UniformBufferObject {
-    alignas(16) glm::mat4 model;
     alignas(16) glm::mat4 view;
     alignas(16) glm::mat4 projection;
 };
@@ -111,6 +111,7 @@ struct RenderInstance {
 
 struct RenderState {
     std::unordered_map<int, RenderEntity> entities;
+    std::vector<RenderEntity> entitiesVector;
     std::vector<RenderInstance> instances;
 };
 
@@ -118,11 +119,10 @@ class Renderer {
 public:
     Renderer(Window& window, GameState& gameState);
     ~Renderer();
-    void drawFrame(RenderState& renderState);
+    void drawFrame(GameState& gameState);
 
 private:
     Window& window;
-    GameState& gameState;
     RenderState renderState;
     vk::raii::Context context;
     vk::raii::Instance instance = nullptr;
@@ -168,6 +168,9 @@ private:
     std::vector<vk::raii::Buffer> uniformBuffers;
     std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
     std::vector<void*> uniformBuffersMapped;
+    std::vector<vk::raii::Buffer> storageBuffers;
+    std::vector<vk::raii::DeviceMemory> storageBuffersMemory;
+    std::vector<void*> storageBuffersMapped;
     vk::raii::DescriptorPool descriptorPool = nullptr;
     std::vector<vk::raii::DescriptorSet> descriptorSets;
     vk::raii::Image textureImage = nullptr;
@@ -184,9 +187,11 @@ private:
     vk::SampleCountFlagBits msaaSamples = vk::SampleCountFlagBits::e1;
     // mk:members
 
-    void createRenderState();
+    void loadEntities(GameState& gameState);
+    void updateRenderState(GameState& gameState);
     void initVulkan();
     void updateUniformBuffer(uint32_t currentFrameIndex);
+    void updateStorageBuffer(uint32_t currentFrameIndex);
     void recordFrameCommandBuffer(uint32_t imageIndex);
 
     void createInstance();
@@ -210,6 +215,7 @@ private:
     void createVertexBuffer();
     void createIndexBuffer();
     void createUniformBuffers();
+    void createStorageBuffers();
     void createDescriptorPool();
     void createDescriptorSets();
     void createCommandBuffers();

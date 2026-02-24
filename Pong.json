@@ -2,8 +2,14 @@
   "entities": {
     "0": {
       "id": 0,
+      "model": 1,
+      "name": "Paddle",
+      "texture": 0
+    },
+    "1": {
+      "id": 1,
       "model": 0,
-      "name": "Room",
+      "name": "Ball",
       "texture": 0
     }
   },
@@ -16,7 +22,7 @@
             "id": 0,
             "level": 0,
             "position": {
-              "x": -0.8,
+              "x": -0.5,
               "y": 0,
               "z": 0
             },
@@ -27,13 +33,15 @@
               "y": 0,
               "z": 0
             }
-          },
-          "1": {
-            "entity": 0,
-            "id": 1,
+          }
+        },
+        "1": {
+          "0": {
+            "entity": 1,
+            "id": 0,
             "level": 0,
             "position": {
-              "x": 0.8,
+              "x": 0,
               "y": 0,
               "z": 0
             },
@@ -53,8 +61,12 @@
   },
   "models": {
     "0": {
-      "filename": "models/viking_room.obj",
+      "filename": "models/ball.obj",
       "id": 0
+    },
+    "1": {
+      "filename": "models/paddle.obj",
+      "id": 1
     }
   },
   "textures": {

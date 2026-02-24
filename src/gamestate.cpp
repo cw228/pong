@@ -66,3 +66,6 @@ GameState loadGameState(const std::string& path) {
 
     return state;
 }
+
+void updateGameState(GameState& gameState, InputState& inputState, float deltaTime) {
+}

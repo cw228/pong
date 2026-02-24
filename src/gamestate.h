@@ -4,6 +4,8 @@
 #include <string>
 #include <unordered_map>
 
+#include "inputstate.h"
+
 struct Entity {
     int id;
     int model;
@@ -45,4 +47,5 @@ struct GameState {
 };
 
 GameState loadGameState(const std::string& path);
+void updateGameState(GameState& gameState, InputState& inputState, float deltaTime);
 
