@@ -18,6 +18,7 @@ def main():
     main = Level("Main")
 
     Instance(main.id, paddle.id, position=Vector3(-0.5, 0, 0))
+    Instance(main.id, paddle.id, position=Vector3(0.5, 0, 0))
     Instance(main.id, ball.id, position=Vector3.zero())
 
     export("Pong.json")
