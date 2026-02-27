@@ -1,7 +1,7 @@
 import json
 from typing import Any
 from dataclasses import asdict, dataclass, field
-from .utility import Vector3
+from .utility import Vector2, Vector3
 
 class ModelId(int):
     pass
@@ -19,16 +19,23 @@ class InstanceId(int):
     pass
 
 @dataclass
-class _Data:
-    models: dict[ModelId, Model] = field(default_factory=dict)
-    textures: dict[TextureId, Texture] = field(default_factory=dict)
-    entities: dict[EntityId, Entity] = field(default_factory=dict)
-    levels: dict[LevelId, Level] = field(default_factory=dict)
+class _data:
+    frameWidth: int = 800
+    frameHeight: int = 600
+    models: dict[ModelId, model] = field(default_factory=dict)
+    textures: dict[TextureId, texture] = field(default_factory=dict)
+    entities: dict[EntityId, entity] = field(default_factory=dict)
+    levels: dict[LevelId, level] = field(default_factory=dict)
+    playerId: InstanceId = InstanceId(0)
 
-_DATA = _Data()
+_DATA = _data()
+
+def frameSize(width: int, height: int):
+    _DATA.frameWidth = width
+    _DATA.frameHeight = height
 
 @dataclass
-class Model:
+class model:
     id: ModelId = field(init=False)
     filename: str
 
@@ -37,7 +44,7 @@ class Model:
         _DATA.models[self.id] = self
 
 @dataclass
-class Texture:
+class texture:
     id: TextureId = field(init=False)
     filename: str
 
@@ -46,7 +53,7 @@ class Texture:
         _DATA.textures[self.id] = self
 
 @dataclass
-class Entity:
+class entity:
     id: EntityId = field(init=False)
     name: str
     model: ModelId | None
@@ -61,7 +68,7 @@ class Entity:
         _DATA.entities[self.id] = self
 
 @dataclass
-class Instance:
+class instance:
     id: InstanceId = field(init=False)
     level: LevelId
     entity: EntityId
@@ -81,10 +88,10 @@ class Instance:
         _DATA.levels[self.level].entity_instances[self.entity][self.id] = self
 
 @dataclass
-class Level:
+class level:
     id: LevelId = field(init=False)
     name: str
-    entity_instances: dict[EntityId, dict[InstanceId, Instance]] = field(init=False, default_factory=dict)
+    entity_instances: dict[EntityId, dict[InstanceId, instance]] = field(init=False, default_factory=dict)
 
     def __post_init__(self):
         self.id = LevelId(len(_DATA.levels))

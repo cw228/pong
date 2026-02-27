@@ -55,7 +55,7 @@ add_custom_command(
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/pong.py
     DEPENDS
         ${CMAKE_SOURCE_DIR}/pong.py
-        ${CMAKE_SOURCE_DIR}/tools/game_data.py
+        ${CMAKE_SOURCE_DIR}/tools/gamedata.py
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     COMMENT "Generating Pong.json"
 )

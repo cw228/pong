@@ -121,6 +121,8 @@ void Renderer::drawFrame(GameState& gameState) {
     if (presentResult == vk::Result::eErrorOutOfDateKHR || presentResult == vk::Result::eSuboptimalKHR || frameBufferResized) {
         frameBufferResized = false;
         recreateSwapchain();
+        gameState.frameWidth = swapchainExtent.width;
+        gameState.frameHeight = swapchainExtent.height;
     } else if (presentResult != vk::Result::eSuccess) {
         throw std::runtime_error("failed to present");
     }

@@ -13,6 +13,8 @@
       "texture": 0
     }
   },
+  "frameHeight": 800,
+  "frameWidth": 1200,
   "levels": {
     "0": {
       "entity_instances": {

@@ -1,4 +1,5 @@
-from tools.game_data import Entity, Instance, Level, Model, Texture, Vector3, export
+from tools.gamedata import *
+from tools.utility import Vector3
 
 TOP = -1
 BOTTOM = 1
@@ -6,20 +7,20 @@ LEFT = -1
 RIGHT = 1
 
 def main():
-    # viking_room_model = Model("models/viking_room.obj")
-    viking_room_texture = Texture("textures/viking_room.png")
+    frameSize(1200, 800)
 
-    ball_model = Model("models/ball.obj") 
-    paddle_model = Model("models/paddle.obj")
+    viking_room_texture = texture("textures/viking_room.png")
+    ball_model = model("models/ball.obj") 
+    paddle_model = model("models/paddle.obj")
 
-    paddle = Entity("Paddle", paddle_model.id, viking_room_texture.id)
-    ball = Entity("Ball", ball_model.id, viking_room_texture.id)
+    paddle = entity("Paddle", paddle_model.id, viking_room_texture.id)
+    ball = entity("Ball", ball_model.id, viking_room_texture.id)
 
-    main = Level("Main")
+    main = level("Main")
 
-    Instance(main.id, paddle.id, position=Vector3(-0.5, 0, 0))
-    Instance(main.id, paddle.id, position=Vector3(0.5, 0, 0))
-    Instance(main.id, ball.id, position=Vector3.zero())
+    instance(main.id, paddle.id, position=Vector3(-0.5, 0, 0))
+    instance(main.id, paddle.id, position=Vector3(0.5, 0, 0))
+    instance(main.id, ball.id, position=Vector3.zero())
 
     export("Pong.json")
 

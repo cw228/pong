@@ -5,12 +5,16 @@
 #include <iostream>
 #include <chrono>
 
+int WIDTH = 800;
+int HEIGHT = 800;
+
 int main() {
-    Window window{800, 600};
+    // TODO: set width and height in gameState
+    GameState gameState = loadGameState("Pong.json");
+    Window window{gameState.frameWidth, gameState.frameHeight};
     InputState inputState;
 
     try {
-        GameState gameState = loadGameState("Pong.json");
         Renderer renderer(window, gameState);
 
         auto lastTime = std::chrono::high_resolution_clock::now();

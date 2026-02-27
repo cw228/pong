@@ -40,6 +40,8 @@ struct Texture {
 };
 
 struct GameState {
+    int frameWidth;
+    int frameHeight;
     std::unordered_map<int, Entity> entities;
     std::unordered_map<int, Level> levels;
     std::unordered_map<int, Model> models;
