@@ -16,9 +16,6 @@ find_path(STB_INCLUDE_DIR stb/stb_image.h REQUIRED)
 # tinyobjloader is header-only, just verify it's installed
 find_path(TINYOBJLOADER_INCLUDE_DIR tiny_obj_loader.h REQUIRED)
 
-find_package(nlohmann_json REQUIRED)
-find_package(Python3 REQUIRED)
-
 # Create executable
 add_executable(pong src/main.cpp src/renderer.cpp src/gamestate.cpp src/inputstate.cpp src/libs.cpp)
 
@@ -27,7 +24,6 @@ target_link_libraries(pong PRIVATE
     Vulkan::Vulkan
     glfw
     glm::glm
-    nlohmann_json::nlohmann_json
 )
 
 target_include_directories(pong PRIVATE ${STB_INCLUDE_DIR} ${TINYOBJLOADER_INCLUDE_DIR})
@@ -48,19 +44,6 @@ target_precompile_headers(pong PRIVATE
     <glm/gtc/matrix_transform.hpp>
     <glm/gtx/hash.hpp>
 )
-
-# Generate Pong.json from pong.py
-add_custom_command(
-    OUTPUT ${CMAKE_SOURCE_DIR}/Pong.json
-    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/pong.py
-    DEPENDS
-        ${CMAKE_SOURCE_DIR}/pong.py
-        ${CMAKE_SOURCE_DIR}/tools/gamedata.py
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    COMMENT "Generating Pong.json"
-)
-add_custom_target(gamedata DEPENDS ${CMAKE_SOURCE_DIR}/Pong.json)
-add_dependencies(pong gamedata)
 
 # Find slangc compiler (included in Vulkan SDK 1.3.296.0+)
 find_program(slangc_exe slangc HINTS $ENV{VULKAN_SDK}/bin)
