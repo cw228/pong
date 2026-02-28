@@ -9,8 +9,7 @@ int WIDTH = 800;
 int HEIGHT = 800;
 
 int main() {
-    // TODO: set width and height in gameState
-    GameState gameState = loadGameState("Pong.json");
+    GameState gameState = loadGameState();
     Window window{gameState.frameWidth, gameState.frameHeight};
     InputState inputState;
 

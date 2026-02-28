@@ -88,6 +88,7 @@
       "id": 1
     }
   },
+  "playerId": 0,
   "textures": {
     "0": {
       "filename": "textures/viking_room.png",

@@ -134,7 +134,7 @@ void Renderer::updateRenderState(GameState& gameState) {
     renderState.instances.clear();
     // In the future, maybe only load the active level. Right now there's only 1 anyway
     for (auto& [levelId, level] : gameState.levels) {
-        for (auto& [entityId, instances] : level.entity_instances) {
+        for (auto& [entityId, instances] : level.entityInstances) {
             renderState.entities[entityId].firstInstance = renderState.instances.size();
             renderState.entities[entityId].instanceCount = instances.size();
             for (auto& [instanceId, instance] : instances) {

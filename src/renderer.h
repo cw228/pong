@@ -15,7 +15,7 @@
 
 constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 constexpr int MAX_INSTANCES = 100;
-inline const std::string MODEL_PATH = "models/viking_room.obj";
+constexpr int MAX_TEXTURES = 10;
 inline const std::string TEXTURE_PATH = "textures/viking_room.png";
 
 inline const std::vector<const char*> validationLayers = {

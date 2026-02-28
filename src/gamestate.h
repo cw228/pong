@@ -15,18 +15,18 @@ struct Entity {
 
 struct Instance {
     int id;
-    int entity;
-    int level;
     glm::vec3 position;
-    float rotation;
-    float scale;
     glm::vec3 velocity;
+    float rotation = 0.0;
+    float scale = 1.0;
 };
 
 struct Level {
     int id;
     std::string name;
-    std::unordered_map<int, std::unordered_map<int, Instance>> entity_instances;
+    std::unordered_map<int, std::unordered_map<int, Instance>> entityInstances;
+    int playerEntityId;
+    int playerInstanceId;
 };
 
 struct Model {
@@ -48,6 +48,6 @@ struct GameState {
     std::unordered_map<int, Texture> textures;
 };
 
-GameState loadGameState(const std::string& path);
+GameState loadGameState();
 void updateGameState(GameState& gameState, InputState& inputState, float deltaTime);
 
