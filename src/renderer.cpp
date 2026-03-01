@@ -17,7 +17,7 @@
 Renderer::Renderer(Window& window, GameState& gameState) : window(window) {
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
-    loadEntities(gameState);
+    initRenderState(gameState);
     initVulkan();
 }
 
@@ -53,7 +53,9 @@ void Renderer::initVulkan() {
     createSyncObjects();
 }
 
-void Renderer::loadEntities(GameState& gameState) {
+// NOTE: Maybe use something other than GameState to hold this initializtion data that doesn't change
+// Also, maybe non-changing data should not in RenderState or just declared 'const'
+void Renderer::initRenderState(GameState& gameState) {
     for (auto& [entityId, entity] : gameState.entities) {
         RenderEntity renderEntity{};
         renderEntity.vertexOffset = vertices.size();
@@ -63,6 +65,12 @@ void Renderer::loadEntities(GameState& gameState) {
         renderEntity.vertexCount = vertices.size() - renderEntity.vertexOffset;
         renderEntity.indexCount = indices.size() - renderEntity.firstIndex;
         renderState.entities[entityId] = renderEntity;
+    }
+
+    // NOTE: Why do this?
+    for (auto& [textureId, texture] : gameState.textures) {
+        RenderTexture renderTexture{ .filename = texture.filename };
+        renderState.textures.push_back(renderTexture);
     }
 }
 
@@ -492,7 +500,7 @@ void Renderer::createDescriptorSetLayout() {
         vk::DescriptorSetLayoutBinding{
             .binding = 1,
             .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-            .descriptorCount = 1,
+            .descriptorCount = MAX_TEXTURES,
             .stageFlags = vk::ShaderStageFlagBits::eFragment
         },
         vk::DescriptorSetLayoutBinding{
@@ -670,6 +678,8 @@ void Renderer::createDepthResources() {
     );
     depthImageView = createImageView(depthImage, depthFormat, vk::ImageAspectFlagBits::eDepth, 1);
 }
+
+// TODO createTextureImages() - use one allocation
 
 void Renderer::createTextureImage() {
     int texWidth, texHeight, texChannels;
@@ -901,7 +911,7 @@ void Renderer::createDescriptorPool() {
         },
         vk::DescriptorPoolSize{
             .type = vk::DescriptorType::eCombinedImageSampler,
-            .descriptorCount = MAX_FRAMES_IN_FLIGHT,
+            .descriptorCount = MAX_TEXTURES * MAX_FRAMES_IN_FLIGHT,
         },
         vk::DescriptorPoolSize{
             .type = vk::DescriptorType::eStorageBuffer,

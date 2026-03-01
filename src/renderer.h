@@ -109,8 +109,13 @@ struct RenderInstance {
     glm::mat4 modelMatrix;
 };
 
+struct RenderTexture {
+    std::string filename;
+};
+
 struct RenderState {
     std::unordered_map<int, RenderEntity> entities;
+    std::vector<RenderTexture> textures;
     std::vector<RenderEntity> entitiesVector;
     std::vector<RenderInstance> instances;
 };
@@ -187,7 +192,7 @@ private:
     vk::SampleCountFlagBits msaaSamples = vk::SampleCountFlagBits::e1;
     // mk:members
 
-    void loadEntities(GameState& gameState);
+    void initRenderState(GameState& gameState);
     void updateRenderState(GameState& gameState);
     void initVulkan();
     void updateUniformBuffer(uint32_t currentFrameIndex);
