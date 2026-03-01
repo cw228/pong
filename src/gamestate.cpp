@@ -1,4 +1,5 @@
 #include "gamestate.h"
+#include <print>
 
 GameState loadGameState() {
     Model paddleModel{
@@ -92,10 +93,14 @@ GameState loadGameState() {
 void updateGameState(GameState& gameState, InputState& inputState, float deltaTime) {
     // std::print("\rMouse Position: {:.2f}, {:.2f}", inputState.mousePos.x, inputState.mousePos.y);
     // std::print("\rFrame Size: {}, {}", gameState.frameWidth, gameState.frameHeight);
-    // glm::vec2 playerPos{
-    //     inputState.mousePos.x / gameState.frameWidth * 2.0 - 1.0,
-    //     inputState.mousePos.y / gameState.frameHeight * 2.0 - 1.0,
-    // }; 
-    // std::print("\rPlayer Position: {}, {}", playerPos.x, playerPos.y);
+    glm::vec2 mousePos{
+        inputState.mousePos.x / gameState.frameWidth * 2.0 - 1.0,
+        -(inputState.mousePos.y / gameState.frameHeight * 2.0 - 1.0),
+    }; 
+    std::print("\rMouse Position NDC: {}, {}", mousePos.x, mousePos.y);
+    Level& level = gameState.levels[0];
+    Instance& player = level.entityInstances[level.playerEntityId][level.playerInstanceId];
+    player.position.y = mousePos.y;
+
     // gameState.entities[]
 }
