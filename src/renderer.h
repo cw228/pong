@@ -97,23 +97,30 @@ struct UniformBufferObject {
 };
 
 struct RenderEntity {
-    int32_t vertexOffset;
-    uint32_t vertexCount;
-    uint32_t firstIndex;
-    uint32_t indexCount;
+    uint32_t modelId;
+    uint32_t textureId;
     uint32_t firstInstance;
     uint32_t instanceCount;
 };
 
 struct RenderInstance {
     glm::mat4 modelMatrix;
+    uint32_t textureIndex;
+};
+
+struct RenderModel {
+    int32_t vertexOffset;
+    uint32_t vertexCount;
+    uint32_t firstIndex;
+    uint32_t indexCount;
 };
 
 struct RenderTexture {
-    std::string filename;
+    uint32_t textureIndex;
 };
 
 struct RenderState {
+    std::unordered_map<int, RenderModel> models;
     std::unordered_map<int, RenderEntity> entities;
     std::vector<RenderTexture> textures;
     std::vector<RenderEntity> entitiesVector;
@@ -216,7 +223,7 @@ private:
     void createTextureImage();
     void createTextureImageView();
     void createTextureSampler();
-    void loadModel(std::string& path);
+    void loadModel(std::string& path, std::vector<Vertex>& vertices, std::vector<uint32_t>& indices);
     void createVertexBuffer();
     void createIndexBuffer();
     void createUniformBuffers();

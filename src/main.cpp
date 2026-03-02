@@ -5,9 +5,6 @@
 #include <iostream>
 #include <chrono>
 
-int WIDTH = 800;
-int HEIGHT = 800;
-
 int main() {
     GameState gameState = loadGameState();
     Window window{gameState.frameWidth, gameState.frameHeight};

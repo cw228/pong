@@ -55,23 +55,47 @@ void Renderer::initVulkan() {
 
 // NOTE: Maybe use something other than GameState to hold this initializtion data that doesn't change
 // Also, maybe non-changing data should not in RenderState or just declared 'const'
+// NOTE: Need to call this after Vulkan instance is initialized, I think
 void Renderer::initRenderState(GameState& gameState) {
+    // We need RenderModel{ vertexOffset, firstIndex, vertexCount, indexCount }
+    // load models, textures here
+    // RenderEntity is { model, texture }
+
+    std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices;
+
+    for (auto& [modelId, model] : gameState.models) {
+        RenderModel renderModel{};
+        renderModel.vertexOffset = vertices.size();
+        renderModel.firstIndex = indices.size();
+        loadModel(model.filename, vertices, indices);
+        renderModel.vertexCount = vertices.size() - renderModel.vertexOffset;
+        renderModel.indexCount = indices.size() - renderModel.firstIndex;
+        renderState.models[modelId] = renderModel;
+    }
+
+    // createVertexBuffer()
+    // createIndexBuffer()
+
+    // loop textures
+    // populate renderState.textures
+    // RenderTexture holds info for updateRenderState (textureIndex?)
+    // call createTextureImages
+    for (auto& [textureId, texture] : gameState.textures) {
+    }
+
+    // createTextureImages()
+
+    // NOTE: Difficult to update these in different ways if they're all grouped together.
+    // Need some way of categorizing them (player / opponent / ball) with update functions 
+    // dedicated to each category
     for (auto& [entityId, entity] : gameState.entities) {
         RenderEntity renderEntity{};
-        renderEntity.vertexOffset = vertices.size();
-        renderEntity.firstIndex = indices.size();
-        Model model = gameState.models[entity.model];
-        loadModel(model.filename);
-        renderEntity.vertexCount = vertices.size() - renderEntity.vertexOffset;
-        renderEntity.indexCount = indices.size() - renderEntity.firstIndex;
+        renderEntity.modelId = entity.modelId;
+        renderEntity.textureId = entity.textureId;
         renderState.entities[entityId] = renderEntity;
     }
 
-    // NOTE: Why do this?
-    for (auto& [textureId, texture] : gameState.textures) {
-        RenderTexture renderTexture{ .filename = texture.filename };
-        renderState.textures.push_back(renderTexture);
-    }
 }
 
 void Renderer::drawFrame(GameState& gameState) {
@@ -143,8 +167,10 @@ void Renderer::updateRenderState(GameState& gameState) {
     // In the future, maybe only load the active level. Right now there's only 1 anyway
     for (auto& [levelId, level] : gameState.levels) {
         for (auto& [entityId, instances] : level.entityInstances) {
-            renderState.entities[entityId].firstInstance = renderState.instances.size();
-            renderState.entities[entityId].instanceCount = instances.size();
+            RenderEntity& entity = renderState.entities[entityId];
+            entity.firstInstance = renderState.instances.size();
+            entity.instanceCount = instances.size();
+            uint32_t textureIndex = renderState.textures[entity.textureId].textureIndex;
             for (auto& [instanceId, instance] : instances) {
                 // std::println("updateRenderState() entityId: {} positionX: {} positionY: {} instanceIndex: {}", entityId, instance.position.x, instance.position.y, renderState.instances.size());
                 glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), instance.position);
@@ -152,6 +178,7 @@ void Renderer::updateRenderState(GameState& gameState) {
                 modelMatrix = glm::scale(modelMatrix, glm::vec3(instance.scale));
                 RenderInstance renderInstance{};
                 renderInstance.modelMatrix = modelMatrix;
+                renderInstance.textureIndex = textureIndex;
                 renderState.instances.push_back(renderInstance);
             }
         }
@@ -272,8 +299,9 @@ void Renderer::recordFrameCommandBuffer(uint32_t imageIndex) {
     commandBuffer.setScissor(0, scissor);
 
     for (auto& [entityId, e] : renderState.entities) {
+        RenderModel& m = renderState.models[e.modelId];
         // std::println("draw entityId: {} indexCount: {} instanceCount: {} firstIndex: {} vertexOffset: {} firstInstance: {}", entityId, e.indexCount, e.instanceCount, e.firstIndex, e.vertexOffset, e.firstInstance);
-        commandBuffer.drawIndexed(e.indexCount, e.instanceCount, e.firstIndex, e.vertexOffset, e.firstInstance);
+        commandBuffer.drawIndexed(m.indexCount, e.instanceCount, m.firstIndex, m.vertexOffset, e.firstInstance);
     }
 
     commandBuffer.endRendering();
@@ -680,7 +708,6 @@ void Renderer::createDepthResources() {
 }
 
 // TODO createTextureImages() - use one allocation
-
 void Renderer::createTextureImage() {
     int texWidth, texHeight, texChannels;
     stbi_uc* pixels = stbi_load(TEXTURE_PATH.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
@@ -766,7 +793,7 @@ void Renderer::createTextureSampler() {
     textureSampler = vk::raii::Sampler(device, samplerInfo);
 }
 
-void Renderer::loadModel(std::string& path) {
+void Renderer::loadModel(std::string& path, std::vector<Vertex>& vertices, std::vector<uint32_t>& indices) {
     tinyobj::attrib_t attrib;
     std::vector<tinyobj::shape_t> shapes;
     std::vector<tinyobj::material_t> materials;
@@ -808,6 +835,7 @@ void Renderer::loadModel(std::string& path) {
 }
 
 void Renderer::createVertexBuffer() {
+    // TODO: load models here? also create index buffer? pass in vertices and indices?
     vk::DeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
 
     createBuffer(

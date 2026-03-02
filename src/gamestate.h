@@ -7,14 +7,14 @@
 #include "inputstate.h"
 
 struct Entity {
-    int id;
-    int model;
+    uint32_t id;
+    uint32_t modelId;
+    uint32_t textureId;
     std::string name;
-    int texture;
 };
 
 struct Instance {
-    int id;
+    uint32_t id;
     glm::vec3 position;
     glm::vec3 velocity;
     float rotation = 0.0;
@@ -22,30 +22,28 @@ struct Instance {
 };
 
 struct Level {
-    int id;
+    uint32_t id;
     std::string name;
     std::unordered_map<int, std::unordered_map<int, Instance>> entityInstances;
-    int playerEntityId;
-    int playerInstanceId;
 };
 
 struct Model {
-    int id;
+    uint32_t id;
     std::string filename;
 };
 
 struct Texture {
-    int id;
+    uint32_t id;
     std::string filename;
 };
 
 struct GameState {
-    int frameWidth;
-    int frameHeight;
-    std::unordered_map<int, Entity> entities;
-    std::unordered_map<int, Level> levels;
-    std::unordered_map<int, Model> models;
-    std::unordered_map<int, Texture> textures;
+    uint32_t frameWidth;
+    uint32_t frameHeight;
+    std::unordered_map<uint32_t, Entity> entities;
+    std::unordered_map<uint32_t, Level> levels;
+    std::unordered_map<uint32_t, Model> models;
+    std::unordered_map<uint32_t, Texture> textures;
 };
 
 GameState loadGameState();
