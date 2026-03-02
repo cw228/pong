@@ -54,14 +54,19 @@ void Renderer::initVulkan() {
 }
 
 void Renderer::loadEntities(GameState& gameState) {
+    for (auto& [modelId, model] : gameState.models) {
+        RenderModel renderModel{};
+        renderModel.vertexOffset = vertices.size();
+        renderModel.firstIndex = indices.size();
+        loadModel(model.filename);
+        renderModel.vertexCount = vertices.size() - renderModel.vertexOffset;
+        renderModel.indexCount = indices.size() - renderModel.firstIndex;
+        renderState.models[modelId] = renderModel;
+    }
+
     for (auto& [entityId, entity] : gameState.entities) {
         RenderEntity renderEntity{};
-        renderEntity.vertexOffset = vertices.size();
-        renderEntity.firstIndex = indices.size();
-        Model model = gameState.models[entity.model];
-        loadModel(model.filename);
-        renderEntity.vertexCount = vertices.size() - renderEntity.vertexOffset;
-        renderEntity.indexCount = indices.size() - renderEntity.firstIndex;
+        renderEntity.modelId = entity.modelId;
         renderState.entities[entityId] = renderEntity;
     }
 }
@@ -265,7 +270,8 @@ void Renderer::recordFrameCommandBuffer(uint32_t imageIndex) {
 
     for (auto& [entityId, e] : renderState.entities) {
         // std::println("draw entityId: {} indexCount: {} instanceCount: {} firstIndex: {} vertexOffset: {} firstInstance: {}", entityId, e.indexCount, e.instanceCount, e.firstIndex, e.vertexOffset, e.firstInstance);
-        commandBuffer.drawIndexed(e.indexCount, e.instanceCount, e.firstIndex, e.vertexOffset, e.firstInstance);
+        RenderModel& m = renderState.models[e.modelId];
+        commandBuffer.drawIndexed(m.indexCount, e.instanceCount, m.firstIndex, m.vertexOffset, e.firstInstance);
     }
 
     commandBuffer.endRendering();

@@ -18,16 +18,16 @@ GameState loadGameState() {
 
     Entity paddleEntity{
         .id = 0,
-        .model = paddleModel.id,
+        .modelId = paddleModel.id,
         .name = "Paddle",
-        .texture = paddleTexture.id
+        .textureId = paddleTexture.id
     };
     
     Entity ballEntity{
         .id = 1,
-        .model = ballModel.id,
+        .modelId = ballModel.id,
         .name = "Ball",
-        .texture = paddleTexture.id
+        .textureId = paddleTexture.id
     };
 
     Instance playerInstance{
@@ -45,16 +45,16 @@ GameState loadGameState() {
         .position = glm::vec3(0.0)
     };
 
-    std::unordered_map<int, Instance> paddleInstances = {
+    std::unordered_map<uint32_t, Instance> paddleInstances = {
         {playerInstance.id, playerInstance},
         {opponentInstance.id, opponentInstance}
     };
 
-    std::unordered_map<int, Instance> ballInstances = {
+    std::unordered_map<uint32_t, Instance> ballInstances = {
         {ballInstance.id, ballInstance},
     };
 
-    std::unordered_map<int, std::unordered_map<int, Instance>> entityInstances = {
+    std::unordered_map<uint32_t, std::unordered_map<uint32_t, Instance>> entityInstances = {
         {paddleEntity.id, paddleInstances},
         {ballEntity.id, ballInstances}
     };
