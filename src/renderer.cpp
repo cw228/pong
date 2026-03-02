@@ -17,8 +17,8 @@
 Renderer::Renderer(Window& window, GameState& gameState) : window(window) {
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
-    initRenderState(gameState);
     initVulkan();
+    initRenderState(gameState);
 }
 
 Renderer::~Renderer() {
@@ -43,8 +43,6 @@ void Renderer::initVulkan() {
     createTextureImage();
     createTextureImageView();
     createTextureSampler();
-    createVertexBuffer();
-    createIndexBuffer();
     createUniformBuffers();
     createStorageBuffers();
     createDescriptorPool();
@@ -57,10 +55,6 @@ void Renderer::initVulkan() {
 // Also, maybe non-changing data should not in RenderState or just declared 'const'
 // NOTE: Need to call this after Vulkan instance is initialized, I think
 void Renderer::initRenderState(GameState& gameState) {
-    // We need RenderModel{ vertexOffset, firstIndex, vertexCount, indexCount }
-    // load models, textures here
-    // RenderEntity is { model, texture }
-
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
 
@@ -69,22 +63,14 @@ void Renderer::initRenderState(GameState& gameState) {
         renderModel.vertexOffset = vertices.size();
         renderModel.firstIndex = indices.size();
         loadModel(model.filename, vertices, indices);
+        // std::println("{} {} {}", modelId, model.filename, vertices.size());
         renderModel.vertexCount = vertices.size() - renderModel.vertexOffset;
         renderModel.indexCount = indices.size() - renderModel.firstIndex;
         renderState.models[modelId] = renderModel;
     }
 
-    // createVertexBuffer()
-    // createIndexBuffer()
-
-    // loop textures
-    // populate renderState.textures
-    // RenderTexture holds info for updateRenderState (textureIndex?)
-    // call createTextureImages
-    for (auto& [textureId, texture] : gameState.textures) {
-    }
-
-    // createTextureImages()
+    createVertexBuffer(vertices);
+    createIndexBuffer(indices);
 
     // NOTE: Difficult to update these in different ways if they're all grouped together.
     // Need some way of categorizing them (player / opponent / ball) with update functions 
@@ -94,8 +80,8 @@ void Renderer::initRenderState(GameState& gameState) {
         renderEntity.modelId = entity.modelId;
         renderEntity.textureId = entity.textureId;
         renderState.entities[entityId] = renderEntity;
+        // std::println("{} {}", entity.name, entity.modelId);
     }
-
 }
 
 void Renderer::drawFrame(GameState& gameState) {
@@ -170,7 +156,6 @@ void Renderer::updateRenderState(GameState& gameState) {
             RenderEntity& entity = renderState.entities[entityId];
             entity.firstInstance = renderState.instances.size();
             entity.instanceCount = instances.size();
-            uint32_t textureIndex = renderState.textures[entity.textureId].textureIndex;
             for (auto& [instanceId, instance] : instances) {
                 // std::println("updateRenderState() entityId: {} positionX: {} positionY: {} instanceIndex: {}", entityId, instance.position.x, instance.position.y, renderState.instances.size());
                 glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), instance.position);
@@ -178,7 +163,6 @@ void Renderer::updateRenderState(GameState& gameState) {
                 modelMatrix = glm::scale(modelMatrix, glm::vec3(instance.scale));
                 RenderInstance renderInstance{};
                 renderInstance.modelMatrix = modelMatrix;
-                renderInstance.textureIndex = textureIndex;
                 renderState.instances.push_back(renderInstance);
             }
         }
@@ -301,6 +285,7 @@ void Renderer::recordFrameCommandBuffer(uint32_t imageIndex) {
     for (auto& [entityId, e] : renderState.entities) {
         RenderModel& m = renderState.models[e.modelId];
         // std::println("draw entityId: {} indexCount: {} instanceCount: {} firstIndex: {} vertexOffset: {} firstInstance: {}", entityId, e.indexCount, e.instanceCount, e.firstIndex, e.vertexOffset, e.firstInstance);
+        std::println("{} {} {} {}", frameIndex, e.modelId, e.instanceCount, e.firstInstance);
         commandBuffer.drawIndexed(m.indexCount, e.instanceCount, m.firstIndex, m.vertexOffset, e.firstInstance);
     }
 
@@ -528,7 +513,7 @@ void Renderer::createDescriptorSetLayout() {
         vk::DescriptorSetLayoutBinding{
             .binding = 1,
             .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-            .descriptorCount = MAX_TEXTURES,
+            .descriptorCount = 1,
             .stageFlags = vk::ShaderStageFlagBits::eFragment
         },
         vk::DescriptorSetLayoutBinding{
@@ -834,8 +819,7 @@ void Renderer::loadModel(std::string& path, std::vector<Vertex>& vertices, std::
     }
 }
 
-void Renderer::createVertexBuffer() {
-    // TODO: load models here? also create index buffer? pass in vertices and indices?
+void Renderer::createVertexBuffer(std::vector<Vertex>& vertices) {
     vk::DeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
 
     createBuffer(
@@ -861,7 +845,7 @@ void Renderer::createVertexBuffer() {
     copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
 }
 
-void Renderer::createIndexBuffer() {
+void Renderer::createIndexBuffer(std::vector<uint32_t>& indices) {
     vk::DeviceSize bufferSize = sizeof(indices[0]) * indices.size();
 
     createBuffer(

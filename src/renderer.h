@@ -169,8 +169,6 @@ private:
     std::vector<vk::raii::Semaphore> renderCompleteSemaphores;
     uint32_t frameIndex = 0;
     bool frameBufferResized = false;
-    std::vector<Vertex> vertices;
-    std::vector<uint32_t> indices;
     vk::raii::Buffer vertexBuffer = nullptr;
     vk::raii::DeviceMemory vertexBufferMemory = nullptr;
     vk::raii::Buffer stagingBuffer = nullptr;
@@ -224,8 +222,8 @@ private:
     void createTextureImageView();
     void createTextureSampler();
     void loadModel(std::string& path, std::vector<Vertex>& vertices, std::vector<uint32_t>& indices);
-    void createVertexBuffer();
-    void createIndexBuffer();
+    void createVertexBuffer(std::vector<Vertex>& vertices);
+    void createIndexBuffer(std::vector<uint32_t>& indices);
     void createUniformBuffers();
     void createStorageBuffers();
     void createDescriptorPool();

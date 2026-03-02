@@ -20,15 +20,15 @@ GameState loadGameState() {
     Entity paddleEntity{
         .id = 0,
         .modelId = paddleModel.id,
+        .textureId = paddleTexture.id,
         .name = "Paddle",
-        .textureId = paddleTexture.id
     };
     
     Entity ballEntity{
         .id = 1,
         .modelId = ballModel.id,
+        .textureId = paddleTexture.id,
         .name = "Ball",
-        .textureId = paddleTexture.id
     };
 
     Instance playerInstance{
@@ -95,7 +95,7 @@ void updateGameState(GameState& gameState, InputState& inputState, float deltaTi
         inputState.mousePos.x / gameState.frameWidth * 2.0 - 1.0,
         -(inputState.mousePos.y / gameState.frameHeight * 2.0 - 1.0),
     }; 
-    std::print("\rMouse Position NDC: {}, {}", mousePos.x, mousePos.y);
+    // std::print("\rMouse Position NDC: {}, {}", mousePos.x, mousePos.y);
     Level& level = gameState.levels[0];
 
     // gameState.entities[]

@@ -1,0 +1,13 @@
+load multiple texture images
+    -createDescriptorSetLayout
+        -depends on renderState.textures.size()
+    -createTextureImages
+        -creates its own buffers, memory (rather than class members)
+        -depends on renderState.textures (filenames)
+    -createTextureImageViews
+        -depends on renderState.textures ()
+    -what do we actually need when rendering?
+        -updateRenderState:
+        -renderInstance.textureIndex = renderState.textures[entity.textureId].textureIndex
+separate update functions for different object types
+

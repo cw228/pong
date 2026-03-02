@@ -8,7 +8,6 @@ void updateInputState(InputState& inputState, Window& window) {
     double x, y;
     glfwGetCursorPos(window, &x, &y);
     inputState.mousePos = glm::vec2(x, y);
-    // std::print("\rMouse Position: {:.2f}, {:.2f}", inputState.mousePos.x, inputState.mousePos.y);
     std::fflush(stdout);
 }
 
