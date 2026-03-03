@@ -101,10 +101,6 @@ struct RenderModel {
     uint32_t vertexCount;
     uint32_t firstIndex;
     uint32_t indexCount;
-};
-
-struct RenderEntity {
-    uint32_t modelId;
     uint32_t firstInstance;
     uint32_t instanceCount;
 };
@@ -114,9 +110,7 @@ struct RenderInstance {
 };
 
 struct RenderState {
-    std::unordered_map<uint32_t, RenderEntity> entities;
     std::unordered_map<uint32_t, RenderModel> models;
-    std::vector<RenderEntity> entitiesVector;
     std::vector<RenderInstance> instances;
 };
 
@@ -192,8 +186,9 @@ private:
     vk::SampleCountFlagBits msaaSamples = vk::SampleCountFlagBits::e1;
     // mk:members
 
-    void loadEntities(GameState& gameState);
+    void loadModels(GameState& gameState);
     void updateRenderState(GameState& gameState);
+    glm::mat4 createModelMatrix(Instance& instance);
     void initVulkan();
     void updateUniformBuffer(uint32_t currentFrameIndex);
     void updateStorageBuffer(uint32_t currentFrameIndex);

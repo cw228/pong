@@ -33,5 +33,6 @@ VertexOutput vertMain(VertexInput input, int instanceId : SV_InstanceID, int fir
 
 [shader("fragment")]
 float4 fragMain(VertexOutput vertex) : SV_Target {
-    return texture.Sample(vertex.textureCoordinates);
+    return float4(vertex.color, 1);
+    // return texture.Sample(vertex.textureCoordinates);
 }

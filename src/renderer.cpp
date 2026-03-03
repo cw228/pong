@@ -6,10 +6,8 @@
 #include <cstdint>
 #include <print>
 #include <fstream>
-#include <chrono>
 #include <unordered_map>
 #include <bit>
-#include <random>
 
 #include <stb/stb_image.h>
 #include <tiny_obj_loader.h>
@@ -17,7 +15,7 @@
 Renderer::Renderer(Window& window, GameState& gameState) : window(window) {
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
-    loadEntities(gameState);
+    loadModels(gameState);
     initVulkan();
 }
 
@@ -53,7 +51,7 @@ void Renderer::initVulkan() {
     createSyncObjects();
 }
 
-void Renderer::loadEntities(GameState& gameState) {
+void Renderer::loadModels(GameState& gameState) {
     for (auto& [modelId, model] : gameState.models) {
         RenderModel renderModel{};
         renderModel.vertexOffset = vertices.size();
@@ -62,12 +60,6 @@ void Renderer::loadEntities(GameState& gameState) {
         renderModel.vertexCount = vertices.size() - renderModel.vertexOffset;
         renderModel.indexCount = indices.size() - renderModel.firstIndex;
         renderState.models[modelId] = renderModel;
-    }
-
-    for (auto& [entityId, entity] : gameState.entities) {
-        RenderEntity renderEntity{};
-        renderEntity.modelId = entity.modelId;
-        renderState.entities[entityId] = renderEntity;
     }
 }
 
@@ -137,31 +129,38 @@ void Renderer::drawFrame(GameState& gameState) {
 
 void Renderer::updateRenderState(GameState& gameState) {
     renderState.instances.clear();
-    // In the future, maybe only load the active level. Right now there's only 1 anyway
-    for (auto& [levelId, level] : gameState.levels) {
-        for (auto& [entityId, instances] : level.entityInstances) {
-            renderState.entities[entityId].firstInstance = renderState.instances.size();
-            renderState.entities[entityId].instanceCount = instances.size();
-            for (auto& [instanceId, instance] : instances) {
-                // std::println("updateRenderState() entityId: {} positionX: {} positionY: {} instanceIndex: {}", entityId, instance.position.x, instance.position.y, renderState.instances.size());
-                glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), instance.position);
-                modelMatrix = glm::rotate(modelMatrix, glm::radians(instance.rotation), glm::vec3(0.0f, 0.0f, 1.0f));
-                modelMatrix = glm::scale(modelMatrix, glm::vec3(instance.scale));
-                RenderInstance renderInstance{};
-                renderInstance.modelMatrix = modelMatrix;
-                renderState.instances.push_back(renderInstance);
-            }
+
+    std::unordered_map<int, std::vector<Instance>> modelInstances;
+
+    for (auto& instance : gameState.getInstances()) {
+        modelInstances[instance.modelId].push_back(instance);
+    }
+
+    for (auto& [modelId, instances] : modelInstances) {
+        RenderModel& model = renderState.models[modelId];
+        model.firstInstance = renderState.instances.size();
+        model.instanceCount = instances.size();
+
+        for (auto& instance : instances) {
+            RenderInstance renderInstance{};
+            renderInstance.modelMatrix = createModelMatrix(instance);
+            renderState.instances.push_back(renderInstance);
         }
     }
+}
+
+glm::mat4 Renderer::createModelMatrix(Instance& instance) {
+    glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), instance.position);
+    modelMatrix = glm::rotate(modelMatrix, glm::radians(instance.rotation), glm::vec3(0.0f, 0.0f, 1.0f));
+    modelMatrix = glm::scale(modelMatrix, glm::vec3(instance.scale));
+    return modelMatrix;
 }
 
 void Renderer::updateUniformBuffer(uint32_t currentFrameIndex) {
     UniformBufferObject ubo{};
     // ubo.view = glm::lookAt(glm::vec3(0.0f, 0.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
     ubo.view = glm::mat4(1.0f); // Don't need for 2D?
-    // ubo.projection = glm::perspective(glm::radians(45.0f), static_cast<float>(swapchainExtent.width) / static_cast<float>(swapchainExtent.height), 0.1f, 10.0f);
     ubo.projection = glm::ortho(-1.0, 1.0, -1.0, 1.0, -1.0, 1.0);
-
     ubo.projection[1][1] *= -1;
     memcpy(uniformBuffersMapped[currentFrameIndex], &ubo, sizeof(ubo));
 }
@@ -268,10 +267,9 @@ void Renderer::recordFrameCommandBuffer(uint32_t imageIndex) {
     commandBuffer.setViewport(0, viewport);
     commandBuffer.setScissor(0, scissor);
 
-    for (auto& [entityId, e] : renderState.entities) {
+    for (auto& [modelId, m] : renderState.models) {
         // std::println("draw entityId: {} indexCount: {} instanceCount: {} firstIndex: {} vertexOffset: {} firstInstance: {}", entityId, e.indexCount, e.instanceCount, e.firstIndex, e.vertexOffset, e.firstInstance);
-        RenderModel& m = renderState.models[e.modelId];
-        commandBuffer.drawIndexed(m.indexCount, e.instanceCount, m.firstIndex, m.vertexOffset, e.firstInstance);
+        commandBuffer.drawIndexed(m.indexCount, m.instanceCount, m.firstIndex, m.vertexOffset, m.firstInstance);
     }
 
     commandBuffer.endRendering();
@@ -574,6 +572,7 @@ void Renderer::createGraphicsPipeline() {
         .polygonMode = vk::PolygonMode::eFill,
         .cullMode = vk::CullModeFlagBits::eBack,
         .frontFace = vk::FrontFace::eCounterClockwise,
+        // .frontFace = vk::FrontFace::eClockwise,
         .depthBiasEnable = vk::False,
         .depthBiasSlopeFactor = 1.0f,
         .lineWidth = 1.0f
