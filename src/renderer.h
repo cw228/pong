@@ -211,7 +211,7 @@ private:
     void createTextureImage();
     void createTextureImageView();
     void createTextureSampler();
-    void loadModel(std::string& path);
+    void loadModel(const std::string& path);
     void createVertexBuffer();
     void createIndexBuffer();
     void createUniformBuffers();

@@ -52,14 +52,14 @@ void Renderer::initVulkan() {
 }
 
 void Renderer::loadModels(GameState& gameState) {
-    for (auto& [modelId, model] : gameState.models) {
+    for (Model& model : gameState.models) {
         RenderModel renderModel{};
         renderModel.vertexOffset = vertices.size();
         renderModel.firstIndex = indices.size();
         loadModel(model.filename);
         renderModel.vertexCount = vertices.size() - renderModel.vertexOffset;
         renderModel.indexCount = indices.size() - renderModel.firstIndex;
-        renderState.models[modelId] = renderModel;
+        renderState.models[model.id] = renderModel;
     }
 }
 
@@ -761,7 +761,7 @@ void Renderer::createTextureSampler() {
     textureSampler = vk::raii::Sampler(device, samplerInfo);
 }
 
-void Renderer::loadModel(std::string& path) {
+void Renderer::loadModel(const std::string& path) {
     tinyobj::attrib_t attrib;
     std::vector<tinyobj::shape_t> shapes;
     std::vector<tinyobj::material_t> materials;
@@ -783,10 +783,14 @@ void Renderer::loadModel(std::string& path) {
                 attrib.vertices[3 * index.vertex_index + 2],
             };
 
-            vertex.textureCoordinates = {
-                attrib.texcoords[2 * index.texcoord_index + 0],
-                1.0f - attrib.texcoords[2 * index.texcoord_index + 1],
-            };
+            if (index.texcoord_index >= 0) {
+                vertex.textureCoordinates = {
+                    attrib.texcoords[2 * index.texcoord_index + 0],
+                    1.0f - attrib.texcoords[2 * index.texcoord_index + 1],
+                };
+            } else {
+                vertex.textureCoordinates = {0.0f, 0.0f};
+            }
 
             vertex.color = {1.0f, 1.0f, 1.0f};
 

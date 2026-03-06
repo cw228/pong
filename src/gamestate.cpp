@@ -1,104 +1,87 @@
 #include "gamestate.h"
 #include <cstdlib>
 #include <print>
+#include <filesystem>
+#include <unordered_map>
 
 GameState loadGameState() {
-    Model paddleModel{
-        .id = 0,
-        .filename = "models/paddle.obj"
+    GameState g{
+        .frameWidth = 800,
+        .frameHeight = 800,
+        .ballSpeedUp = 1.1,
+        .maxBallSpeed = 4,
+        .opponentSpeed = 1
     };
 
-    Model ballModel{
-        .id = 1,
-        .filename = "models/ball.obj"
-    };
+    uint32_t paddleModelId = g.addModel("models/paddle.obj");
+    uint32_t ballModelId = g.addModel("models/ball.obj");
+    uint32_t barrierModelId = g.addModel("models/barrier.obj");
 
-    Model barrierModel{
-        .id = 2,
-        .filename = "models/barrier.obj"
-    };
+    std::unordered_map<char, uint32_t> fontModels;
 
-    Instance playerInstance{
-        .id = 0,
-        .modelId = paddleModel.id,
+    for (const auto& entry : std::filesystem::directory_iterator("models/font")) {
+        std::string path = entry.path().string();
+        std::string stem = entry.path().stem().string();
+        char letter = stem[0];
+        uint32_t modelId = g.addModel(path);
+        fontModels[letter] = modelId;
+    }
+
+    std::string message = "Hello";
+
+    for (char c : message) {
+        std::println("{}", c);
+    }
+
+    // create a Text struct
+    // uses fontModels to create multiple instances for letters
+    // spacing
+
+    g.player = {
+        .modelId = paddleModelId,
         .position = glm::vec3(0.8, 0.0, 0.0),
         .hitBox = { 0.1, 0.5 }
     };
 
-    Instance opponentInstance{
-        .id = 1,
-        .modelId = paddleModel.id,
+    g.opponent = {
+        .modelId = paddleModelId,
         .position = glm::vec3(-0.8, 0.0, 0.0),
         .hitBox = { 0.1, 0.5 }
     };
-
-    Instance ballInstance{
-        .id = 2,
-        .modelId = ballModel.id,
+    
+    g.ball = {
+        .modelId = ballModelId,
         .position = glm::vec3(0.0),
         .hitBox = { 0.1, 0.1 }
     };
 
-    Instance leftBarrier{
-        .id = 3,
-        .modelId = barrierModel.id,
+    g.leftBarrier = {
+        .modelId = barrierModelId,
         .position = glm::vec3(-1.0, 0.0, 0.0),
         .hitBox = {0.1, 2.0}
     };
 
-    Instance rightBarrier{
-        .id = 3,
-        .modelId = barrierModel.id,
+    g.rightBarrier = {
+        .modelId = barrierModelId,
         .position = glm::vec3(1.0, 0.0, 0.0),
         .hitBox = {0.1, 2.0}
     };
 
-    Instance topBarrier{
-        .id = 4,
-        .modelId = barrierModel.id,
+    g.topBarrier = {
+        .modelId = barrierModelId,
         .position = glm::vec3(0.0, 1.0, 0.0),
         .rotation = 90.0,
         .hitBox = {2.0, 0.1}
     };
 
-    Instance bottomBarrier{
-        .id = 5,
-        .modelId = barrierModel.id,
+    g.bottomBarrier = {
+        .modelId = barrierModelId,
         .position = glm::vec3(0.0, -1.0, 0.0),
         .rotation = 90.0,
         .hitBox = {2.0, 0.1}
     };
 
-    std::unordered_map<uint32_t, Instance> paddleInstances = {
-        {playerInstance.id, playerInstance},
-        {opponentInstance.id, opponentInstance}
-    };
-
-    std::unordered_map<uint32_t, Instance> ballInstances = {
-        {ballInstance.id, ballInstance},
-    };
-
-    GameState state{
-        .frameWidth = 1200,
-        .frameHeight = 1200,
-        .ballSpeedUp = 1.1,
-        .maxBallSpeed = 4,
-        .opponentSpeed = 1,
-        .player = playerInstance,
-        .opponent = opponentInstance,
-        .ball = ballInstance,
-        .leftBarrier = leftBarrier,
-        .rightBarrier = rightBarrier,
-        .topBarrier = topBarrier,
-        .bottomBarrier = bottomBarrier,
-        .models = {
-            {paddleModel.id, paddleModel},
-            {ballModel.id, ballModel},
-            {barrierModel.id, barrierModel},
-        },
-    };
-
-    return state;
+    return g;
 }
 
 static float randFloat() {
@@ -143,7 +126,7 @@ static glm::vec3 hitDirection(Instance& paddle, Instance& ball, bool left) {
 void updateGameState(GameState& g, InputState& inputState, float deltaTime) {
     // std::print("\rMouse Position: {:.2f}, {:.2f}", inputState.mousePos.x, inputState.mousePos.y);
     // std::print("\rFrame Size: {}, {}", gameState.frameWidth, gameState.frameHeight);
-    std::print("\rBall speed: {:.2f}", glm::length(g.ball.velocity));
+    // std::print("\rBall speed: {:.2f}", glm::length(g.ball.velocity));
 
     glm::vec2 playerPos{
         inputState.mousePos.x / g.frameWidth * 2.0 - 1.0,
@@ -165,7 +148,8 @@ void updateGameState(GameState& g, InputState& inputState, float deltaTime) {
 
     // Random start direction for ball
     if (g.ball.velocity == glm::vec3(0.0)) {
-        g.ball.velocity = glm::normalize(glm::vec3(randFloat(), randFloat(), 0.0f));
+        // g.ball.velocity = glm::normalize(glm::vec3(randFloat(), randFloat(), 0.0f));
+        g.ball.velocity = glm::vec3(-1.0, 0.0, 0.0);
     }
 
     // Player hit. Player is on the right, only reverse ball direction if ball is moving right
@@ -203,13 +187,13 @@ void updateGameState(GameState& g, InputState& inputState, float deltaTime) {
     // Right barrier (Opponent goal)
     if (hit(g.rightBarrier, g.ball) && g.ball.velocity.x > 0) {
         g.ball.position = glm::vec3(0.0);
-        g.ball.velocity = glm::normalize(glm::vec3(randFloat(), randFloat(), 0.0f));
+        g.ball.velocity = glm::vec3(-1.0, 0.0, 0.0);
     }
 
     // Left barrier (Player goal)
     if (hit(g.leftBarrier, g.ball) && g.ball.velocity.x < 0) {
         g.ball.position = glm::vec3(0.0);
-        g.ball.velocity = glm::normalize(glm::vec3(randFloat(), randFloat(), 0.0f));
+        g.ball.velocity = glm::vec3(-1.0, 0.0, 0.0);
     }
 }
 
