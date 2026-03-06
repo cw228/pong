@@ -6,6 +6,7 @@
 
 GameState loadGameState() {
     GameState g{
+        .begun = false,
         .frameWidth = 800,
         .frameHeight = 800,
         .ballSpeedUp = 1.1,
@@ -17,30 +18,26 @@ GameState loadGameState() {
     uint32_t ballModelId = g.addModel("models/ball.obj");
     uint32_t barrierModelId = g.addModel("models/barrier.obj");
 
-    std::unordered_map<char, uint32_t> fontModels;
-
+    // Load font
     for (const auto& entry : std::filesystem::directory_iterator("models/font")) {
         std::string path = entry.path().string();
         std::string stem = entry.path().stem().string();
         char letter = stem[0];
         uint32_t modelId = g.addModel(path);
-        fontModels[letter] = modelId;
+        g.fontCharModels[letter] = modelId;
     }
 
-    std::string message = "Hello";
-
-    for (char c : message) {
-        std::println("{}", c);
-    }
-
-    // create a Text struct
-    // uses fontModels to create multiple instances for letters
-    // spacing
+    g.message = {
+        .text = "CLICK",
+        .position = glm::vec3(0),
+        .spacing = 0.11,
+        .scale = 0.01,
+    };
 
     g.player = {
         .modelId = paddleModelId,
         .position = glm::vec3(0.8, 0.0, 0.0),
-        .hitBox = { 0.1, 0.5 }
+        .hitBox = { 0.1, 0.5 },
     };
 
     g.opponent = {
@@ -52,7 +49,8 @@ GameState loadGameState() {
     g.ball = {
         .modelId = ballModelId,
         .position = glm::vec3(0.0),
-        .hitBox = { 0.1, 0.1 }
+        .hitBox = { 0.1, 0.1 },
+        .hidden = true
     };
 
     g.leftBarrier = {
@@ -82,6 +80,43 @@ GameState loadGameState() {
     };
 
     return g;
+}
+
+std::vector<Instance> GameState::getInstances() {
+    std::vector<Instance> instances = {
+        player, opponent, ball, 
+        leftBarrier, rightBarrier, topBarrier, bottomBarrier,
+    };
+
+    int i = 0;
+    for (char c : message.text) {
+        glm::vec3 charPosition = glm::vec3(message.position.x + i*message.spacing, message.position.y, message.position.z);
+        Instance inst{
+            .modelId = fontCharModels[c],
+            .position = charPosition,
+            .rotation = 0,
+            .scale = message.scale,
+            .hidden = message.hidden
+        };
+        instances.push_back(inst);
+        i++;
+    }
+
+    std::erase_if(instances, [](Instance& i) {
+        return i.hidden;
+    });
+
+    return instances;
+}
+
+uint32_t GameState::addModel(const std::string& filename) {
+    uint32_t id = models.size();
+    Model m{
+        .id = id,
+        .filename = filename
+    };
+    models.push_back(m);
+    return m.id;
 }
 
 static float randFloat() {
@@ -128,14 +163,24 @@ void updateGameState(GameState& g, InputState& inputState, float deltaTime) {
     // std::print("\rFrame Size: {}, {}", gameState.frameWidth, gameState.frameHeight);
     // std::print("\rBall speed: {:.2f}", glm::length(g.ball.velocity));
 
-    glm::vec2 playerPos{
+    if (!g.begun && inputState.leftMousePressed) {
+        std::println("Begin");
+        g.begun = true;
+        g.ball.hidden = false;
+        g.message.hidden = true;
+    }
+
+    glm::vec2 mousePos{
         inputState.mousePos.x / g.frameWidth * 2.0 - 1.0,
         -(inputState.mousePos.y / g.frameHeight * 2.0 - 1.0),
     }; 
 
-    g.player.position.y = playerPos.y;
-    g.ball.position += g.ball.velocity * deltaTime;
-    g.opponent.position += g.opponent.velocity * deltaTime;
+    g.player.position.y = mousePos.y;
+
+    if (g.begun) {
+        g.ball.position += g.ball.velocity * deltaTime;
+        g.opponent.position += g.opponent.velocity * deltaTime;
+    }
 
     // Move opponent
     if (g.opponent.position.y > g.ball.position.y && g.opponent.velocity.y >= 0) {

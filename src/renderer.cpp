@@ -136,6 +136,9 @@ void Renderer::updateRenderState(GameState& gameState) {
         modelInstances[instance.modelId].push_back(instance);
     }
 
+    // leaving renderState.models[modelId] for modelIds that are no longer rendered
+    // in their previous state
+
     for (auto& [modelId, instances] : modelInstances) {
         RenderModel& model = renderState.models[modelId];
         model.firstInstance = renderState.instances.size();

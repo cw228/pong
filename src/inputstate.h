@@ -2,6 +2,7 @@
 
 struct InputState {
     glm::vec2 mousePos;
+    bool leftMousePressed;
     bool keys[GLFW_KEY_LAST];
 };
 

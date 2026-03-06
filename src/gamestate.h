@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 #include <string>
 #include <unordered_map>
+#include <print>
 
 #include "inputstate.h"
 
@@ -18,6 +19,7 @@ struct Instance {
     float rotation = 0.0;
     float scale = 1.0;
     HitBox hitBox;
+    bool hidden = false;
 };
 
 struct Model {
@@ -31,31 +33,15 @@ struct Texture {
 };
 
 struct Text {
-    std::unordered_map<char, uint32_t>& fontModels;
+    std::string text;
     glm::vec3 position;
     float spacing;
-    std::string text;
     float scale;
-
-    std::vector<Instance> getInstances() {
-        std::vector<Instance> instances;
-        int i = 0;
-        for (char c : text) {
-            glm::vec3 charPosition = glm::vec3(position.x + i*spacing, position.y, position.z);
-            Instance inst{
-                .modelId = fontModels[c],
-                .position = charPosition,
-                .rotation = 180,
-                .scale = scale
-            };
-            instances.push_back(inst);
-            i++;
-        }
-        return instances;
-    }
+    bool hidden = false;
 };
 
 struct GameState {
+    bool begun;
     uint32_t frameWidth;
     uint32_t frameHeight;
     float ballSpeedUp;
@@ -75,35 +61,8 @@ struct GameState {
 
     std::vector<Model> models;
 
-    std::vector<Instance> getInstances() {
-        std::vector<Instance> instances = {
-            player, opponent, ball, 
-            leftBarrier, rightBarrier, topBarrier, bottomBarrier,
-        };
-        // int i = 0;
-        // for (char c : text) {
-        //     glm::vec3 charPosition = glm::vec3(position.x + i*spacing, position.y, position.z);
-        //     Instance inst{
-        //         .modelId = fontModels[c],
-        //         .position = charPosition,
-        //         .rotation = 180,
-        //         .scale = scale
-        //     };
-        //     instances.push_back(inst);
-        //     i++;
-        // }
-        //
-        return instances;
-    };
-
-    uint32_t addModel(const std::string& filename) {
-        Model m{
-            .id = static_cast<uint32_t>(models.size()),
-            .filename = filename
-        };
-        models.push_back(m);
-        return m.id;
-    }
+    std::vector<Instance> getInstances();
+    uint32_t addModel(const std::string& filename);
 };
 
 GameState loadGameState();
