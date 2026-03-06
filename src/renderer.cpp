@@ -129,6 +129,7 @@ void Renderer::drawFrame(GameState& gameState) {
 
 void Renderer::updateRenderState(GameState& gameState) {
     renderState.instances.clear();
+    renderState.renderedModels.clear();
 
     std::unordered_map<int, std::vector<Instance>> modelInstances;
 
@@ -149,6 +150,8 @@ void Renderer::updateRenderState(GameState& gameState) {
             renderInstance.modelMatrix = createModelMatrix(instance);
             renderState.instances.push_back(renderInstance);
         }
+
+        renderState.renderedModels.push_back(modelId);
     }
 }
 
@@ -270,8 +273,8 @@ void Renderer::recordFrameCommandBuffer(uint32_t imageIndex) {
     commandBuffer.setViewport(0, viewport);
     commandBuffer.setScissor(0, scissor);
 
-    for (auto& [modelId, m] : renderState.models) {
-        // std::println("draw entityId: {} indexCount: {} instanceCount: {} firstIndex: {} vertexOffset: {} firstInstance: {}", entityId, e.indexCount, e.instanceCount, e.firstIndex, e.vertexOffset, e.firstInstance);
+    for (auto& modelId : renderState.renderedModels) {
+        RenderModel& m = renderState.models[modelId];
         commandBuffer.drawIndexed(m.indexCount, m.instanceCount, m.firstIndex, m.vertexOffset, m.firstInstance);
     }
 

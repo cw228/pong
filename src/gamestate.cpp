@@ -29,7 +29,7 @@ GameState loadGameState() {
 
     g.message = {
         .text = "CLICK",
-        .position = glm::vec3(0),
+        .position = glm::vec3(-0.28, 0.0, 0.0),
         .spacing = 0.11,
         .scale = 0.01,
     };
@@ -119,10 +119,6 @@ uint32_t GameState::addModel(const std::string& filename) {
     return m.id;
 }
 
-static float randFloat() {
-    return (float)rand() / (float)RAND_MAX;
-}
-
 static float top(Instance& i) {
     return i.position.y + i.hitBox.height / 2.0;
 }
@@ -164,7 +160,6 @@ void updateGameState(GameState& g, InputState& inputState, float deltaTime) {
     // std::print("\rBall speed: {:.2f}", glm::length(g.ball.velocity));
 
     if (!g.begun && inputState.leftMousePressed) {
-        std::println("Begin");
         g.begun = true;
         g.ball.hidden = false;
         g.message.hidden = true;
@@ -191,13 +186,13 @@ void updateGameState(GameState& g, InputState& inputState, float deltaTime) {
         g.opponent.velocity.y = g.opponentSpeed;
     }
 
-    // Random start direction for ball
+    // Start direction for ball
     if (g.ball.velocity == glm::vec3(0.0)) {
-        // g.ball.velocity = glm::normalize(glm::vec3(randFloat(), randFloat(), 0.0f));
         g.ball.velocity = glm::vec3(-1.0, 0.0, 0.0);
     }
 
-    // Player hit. Player is on the right, only reverse ball direction if ball is moving right
+    // Player hit. Player is on the right. 
+    // Only reverse ball direction if ball is moving right. This prevents multi-collision detection.
     if (hit(g.player, g.ball) && g.ball.velocity.x > 0) {
         float speed = glm::length(g.ball.velocity);
         glm::vec3 direction = hitDirection(g.player, g.ball, true);

@@ -111,6 +111,7 @@ struct RenderInstance {
 
 struct RenderState {
     std::unordered_map<uint32_t, RenderModel> models;
+    std::vector<uint32_t> renderedModels;
     std::vector<RenderInstance> instances;
 };
 
