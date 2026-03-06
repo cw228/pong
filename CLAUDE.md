@@ -175,6 +175,10 @@ rm -f build/CMakeFiles/pong.dir/cmake_pch.hxx.pch && cmake --build build
 
 **`window.h` missing `#pragma once`:** If `window.h` is included from both `renderer.h` and `main.cpp`, you'll get a `redefinition of 'Window'` error. The fix is to add `#pragma once` at the top of `window.h`.
 
+## Font / Text Assets
+
+`objects.json` contains legacy game data including a `"font"` section with an 11×11 grid of 2D vertices and a `"characters"` array mapping each character (A-Z, 0-9, punctuation) to triangle indices into that grid. `convert_font.py` converts these into individual OBJ files in `models/font/` (one per character, 2D coordinates with `z=0`). Characters are rendered as regular geometry — no texture atlas or SDF needed.
+
 ## Dependencies
 
 - **stb_image** (`pacman -S stb`) — header-only image loading. Requires `#define STB_IMAGE_IMPLEMENTATION` before include in exactly one source file. `stbi_uc` is a typedef for `unsigned char`.
