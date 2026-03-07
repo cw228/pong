@@ -11,8 +11,8 @@ GameState loadGameState() {
         .frameHeight = 800,
         .ballSpeedUp = 1.1,
         .maxBallSpeed = 4,
-        .opponentSpeed = 1,
-        .maxScore = 7
+        .opponentSpeed = 2,
+        .maxScore = 11
     };
 
     uint32_t paddleModelId = g.addModel("models/paddle.obj");
@@ -222,16 +222,24 @@ void updateGameState(GameState& g, InputState& inputState, float deltaTime) {
 
     // Move opponent
     if (g.opponent.position.y > g.ball.position.y && g.opponent.velocity.y >= 0) {
-        g.opponent.velocity.y = -g.opponentSpeed;
+        if (std::abs(g.ball.velocity.y) <= g.opponentSpeed && top(g.opponent) >= g.ball.position.y && bottom(g.opponent) <= g.ball.position.y) {
+            g.opponent.velocity.y = g.ball.velocity.y;
+        } else {
+            g.opponent.velocity.y = -g.opponentSpeed;
+        }
     } 
 
     if (g.opponent.position.y < g.ball.position.y && g.opponent.velocity.y <= 0) {
-        g.opponent.velocity.y = g.opponentSpeed;
+        if (std::abs(g.ball.velocity.y) <= g.opponentSpeed && top(g.opponent) >= g.ball.position.y && bottom(g.opponent) <= g.ball.position.y) {
+            g.opponent.velocity.y = g.ball.velocity.y;
+        } else {
+            g.opponent.velocity.y = g.opponentSpeed;
+        }
     }
 
     // Start direction for ball
     if (g.ball.velocity == glm::vec3(0.0)) {
-        g.ball.velocity = glm::vec3(-1.0, 0.0, 0.0);
+        g.ball.velocity = glm::vec3(-1.5, 0.0, 0.0);
     }
 
     // Player hit. Player is on the right. 
@@ -270,7 +278,7 @@ void updateGameState(GameState& g, InputState& inputState, float deltaTime) {
     // Right barrier (Opponent goal)
     if (hit(g.rightBarrier, g.ball) && g.ball.velocity.x > 0) {
         g.ball.position = glm::vec3(0.0);
-        g.ball.velocity = glm::vec3(-1.0, 0.0, 0.0);
+        g.ball.velocity = glm::vec3(0.0);
         g.opponentScore++;
         g.opponentScoreText.text = std::to_string(g.opponentScore);
 
@@ -286,7 +294,7 @@ void updateGameState(GameState& g, InputState& inputState, float deltaTime) {
     // Left barrier (Player goal)
     if (hit(g.leftBarrier, g.ball) && g.ball.velocity.x < 0) {
         g.ball.position = glm::vec3(0.0);
-        g.ball.velocity = glm::vec3(-1.0, 0.0, 0.0);
+        g.ball.velocity = glm::vec3(0.0);
         g.playerScore++;
         g.playerScoreText.text = std::to_string(g.playerScore);
 
