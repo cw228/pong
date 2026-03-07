@@ -11,7 +11,8 @@ GameState loadGameState() {
         .frameHeight = 800,
         .ballSpeedUp = 1.1,
         .maxBallSpeed = 4,
-        .opponentSpeed = 1
+        .opponentSpeed = 1,
+        .maxScore = 7
     };
 
     uint32_t paddleModelId = g.addModel("models/paddle.obj");
@@ -27,9 +28,39 @@ GameState loadGameState() {
         g.fontCharModels[letter] = modelId;
     }
 
-    g.message = {
+    g.startMessage = {
         .text = "CLICK",
         .position = glm::vec3(-0.28, 0.0, 0.0),
+        .spacing = 0.11,
+        .scale = 0.01,
+    };
+
+    g.winMessage = {
+        .text = "WINNER",
+        .position = glm::vec3(-0.28, 0.0, 0.0),
+        .spacing = 0.11,
+        .scale = 0.01,
+        .hidden = true
+    };
+
+    g.failMessage = {
+        .text = "FAIL",
+        .position = glm::vec3(-0.28, 0.0, 0.0),
+        .spacing = 0.11,
+        .scale = 0.01,
+        .hidden = true
+    };
+
+    g.playerScoreText = {
+        .text = "0",
+        .position = glm::vec3(0.5, 0.8, 0.0),
+        .spacing = 0.11,
+        .scale = 0.01,
+    };
+
+    g.opponentScoreText = {
+        .text = "0",
+        .position = glm::vec3(-0.5, 0.8, 0.0),
         .spacing = 0.11,
         .scale = 0.01,
     };
@@ -88,18 +119,28 @@ std::vector<Instance> GameState::getInstances() {
         leftBarrier, rightBarrier, topBarrier, bottomBarrier,
     };
 
-    int i = 0;
-    for (char c : message.text) {
-        glm::vec3 charPosition = glm::vec3(message.position.x + i*message.spacing, message.position.y, message.position.z);
-        Instance inst{
-            .modelId = fontCharModels[c],
-            .position = charPosition,
-            .rotation = 0,
-            .scale = message.scale,
-            .hidden = message.hidden
-        };
-        instances.push_back(inst);
-        i++;
+    std::vector<Text> texts = {
+        startMessage, 
+        winMessage, 
+        failMessage, 
+        playerScoreText,
+        opponentScoreText
+    };
+
+    for (Text t : texts) {
+        int i = 0;
+        for (char c : t.text) {
+            glm::vec3 charPosition = glm::vec3(t.position.x + i*t.spacing, t.position.y, t.position.z);
+            Instance inst{
+                .modelId = fontCharModels[c],
+                .position = charPosition,
+                .rotation = 0,
+                .scale = t.scale,
+                .hidden = t.hidden
+            };
+            instances.push_back(inst);
+            i++;
+        }
     }
 
     std::erase_if(instances, [](Instance& i) {
@@ -155,14 +196,16 @@ static glm::vec3 hitDirection(Instance& paddle, Instance& ball, bool left) {
 }
 
 void updateGameState(GameState& g, InputState& inputState, float deltaTime) {
-    // std::print("\rMouse Position: {:.2f}, {:.2f}", inputState.mousePos.x, inputState.mousePos.y);
-    // std::print("\rFrame Size: {}, {}", gameState.frameWidth, gameState.frameHeight);
-    // std::print("\rBall speed: {:.2f}", glm::length(g.ball.velocity));
-
     if (!g.begun && inputState.leftMousePressed) {
         g.begun = true;
+        g.playerScore = 0;
+        g.playerScoreText.text = std::to_string(g.playerScore);
+        g.opponentScore = 0;
+        g.opponentScoreText.text = std::to_string(g.opponentScore);
         g.ball.hidden = false;
-        g.message.hidden = true;
+        g.startMessage.hidden = true;
+        g.failMessage.hidden = true;
+        g.winMessage.hidden = true;
     }
 
     glm::vec2 mousePos{
@@ -228,12 +271,32 @@ void updateGameState(GameState& g, InputState& inputState, float deltaTime) {
     if (hit(g.rightBarrier, g.ball) && g.ball.velocity.x > 0) {
         g.ball.position = glm::vec3(0.0);
         g.ball.velocity = glm::vec3(-1.0, 0.0, 0.0);
+        g.opponentScore++;
+        g.opponentScoreText.text = std::to_string(g.opponentScore);
+
+        if (g.opponentScore >= g.maxScore) {
+            g.begun = false;
+            g.ball.position = glm::vec3(0);
+            g.ball.velocity = glm::vec3(0);
+            g.ball.hidden = true;
+            g.failMessage.hidden = false;
+        }
     }
 
     // Left barrier (Player goal)
     if (hit(g.leftBarrier, g.ball) && g.ball.velocity.x < 0) {
         g.ball.position = glm::vec3(0.0);
         g.ball.velocity = glm::vec3(-1.0, 0.0, 0.0);
+        g.playerScore++;
+        g.playerScoreText.text = std::to_string(g.playerScore);
+
+        if (g.playerScore >= g.maxScore) {
+            g.begun = false;
+            g.ball.position = glm::vec3(0);
+            g.ball.velocity = glm::vec3(0);
+            g.ball.hidden = true;
+            g.winMessage.hidden = false;
+        }
     }
 }
 

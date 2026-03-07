@@ -47,6 +47,8 @@ struct GameState {
     float ballSpeedUp;
     float maxBallSpeed;
     float opponentSpeed;
+    uint16_t maxScore;
+
     std::unordered_map<char, uint32_t> fontCharModels;
 
     Instance player;
@@ -57,7 +59,15 @@ struct GameState {
     Instance topBarrier;
     Instance bottomBarrier;
 
-    Text message;
+    Text startMessage;
+    Text winMessage;
+    Text failMessage;
+
+    uint16_t playerScore;
+    Text playerScoreText;
+
+    uint16_t opponentScore;
+    Text opponentScoreText;
 
     std::vector<Model> models;
 

@@ -54,10 +54,10 @@ endif()
 # Function to compile slang shaders to SPIR-V
 function(compile_slang_shader source_file entry_point)
     cmake_path(GET source_file STEM file_stem)
-    set(output_file "${CMAKE_BINARY_DIR}/shaders/${file_stem}_${entry_point}.spv")
+    set(output_file "${CMAKE_SOURCE_DIR}/shaders/${file_stem}_${entry_point}.spv")
     add_custom_command(
         OUTPUT ${output_file}
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_SOURCE_DIR}/shaders"
         COMMAND ${slangc_exe}
             ${source_file}
             -target spirv

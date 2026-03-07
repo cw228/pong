@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Flip font OBJ files 180 degrees around center (5, 5)."""
+"""Mirror font OBJ files across the X axis (vertical flip)."""
 
 import sys
 
@@ -18,10 +18,10 @@ for path in sys.argv[1:]:
             if line.startswith("v "):
                 parts = line.split()
                 x, y, z = float(parts[1]), float(parts[2]), parts[3]
-                vertices.append((10 - x, 10 - y, z))
+                vertices.append((x, 10 - y, z))
             elif line.startswith("f "):
                 parts = line.split()
-                # Reverse winding order to preserve face orientation
+                # Reverse winding to compensate for single-axis mirror
                 faces.append((parts[1], parts[3], parts[2]))
             elif line.startswith("#"):
                 comment = line
@@ -34,4 +34,4 @@ for path in sys.argv[1:]:
         for i0, i1, i2 in faces:
             f.write(f"f {i0} {i1} {i2}\n")
 
-    print(f"Flipped {path}")
+    print(f"Mirrored {path}")

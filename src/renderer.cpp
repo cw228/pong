@@ -522,10 +522,10 @@ void Renderer::createDescriptorSetLayout() {
 }
 
 void Renderer::createGraphicsPipeline() {
-    std::vector<char> vertShaderCode = readFile("build/shaders/shader_vertMain.spv");
+    std::vector<char> vertShaderCode = readFile("shaders/shader_vertMain.spv");
     vk::raii::ShaderModule vertShaderModule = createShaderModule(vertShaderCode);
 
-    std::vector<char> fragShaderCode = readFile("build/shaders/shader_fragMain.spv");
+    std::vector<char> fragShaderCode = readFile("shaders/shader_fragMain.spv");
     vk::raii::ShaderModule fragShaderModule = createShaderModule(fragShaderCode);
 
     vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
