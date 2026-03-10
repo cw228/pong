@@ -9,7 +9,9 @@ struct Window {
         glfwInit();
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
         glfwWindowHintString(GLFW_WAYLAND_APP_ID, "game");
-        handle = glfwCreateWindow(width, height, "Pong", nullptr, nullptr);
+        GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+        const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+        handle = glfwCreateWindow(mode->width, mode->height, "Pong", monitor, nullptr);
     }
 
     operator GLFWwindow*() const { return handle; }

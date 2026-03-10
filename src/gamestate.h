@@ -44,6 +44,9 @@ struct GameState {
     bool begun;
     uint32_t frameWidth;
     uint32_t frameHeight;
+    float viewportX = 0;
+    float viewportY = 0;
+    float viewportSize = 0;
     float ballSpeedUp;
     float maxBallSpeed;
     float opponentSpeed;

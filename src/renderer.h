@@ -123,6 +123,7 @@ public:
 
 private:
     Window& window;
+    GameState& gameState;
     RenderState renderState;
     vk::raii::Context context;
     vk::raii::Instance instance = nullptr;
@@ -188,6 +189,7 @@ private:
     // mk:members
 
     void loadModels(GameState& gameState);
+    void updateViewport();
     void updateRenderState(GameState& gameState);
     glm::mat4 createModelMatrix(Instance& instance);
     void initVulkan();

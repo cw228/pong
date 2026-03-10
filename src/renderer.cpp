@@ -12,7 +12,7 @@
 #include <stb/stb_image.h>
 #include <tiny_obj_loader.h>
 
-Renderer::Renderer(Window& window, GameState& gameState) : window(window) {
+Renderer::Renderer(Window& window, GameState& gameState) : window(window), gameState(gameState) {
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
     loadModels(gameState);
@@ -33,6 +33,7 @@ void Renderer::initVulkan() {
     getQueues();
     createSwapchain();
     createSwapchainImageViews();
+    updateViewport();
     createDescriptorSetLayout();
     createGraphicsPipeline();
     createCommandPool();
@@ -120,6 +121,7 @@ void Renderer::drawFrame(GameState& gameState) {
         recreateSwapchain();
         gameState.frameWidth = swapchainExtent.width;
         gameState.frameHeight = swapchainExtent.height;
+        updateViewport();
     } else if (presentResult != vk::Result::eSuccess) {
         throw std::runtime_error("failed to present");
     }
@@ -257,17 +259,23 @@ void Renderer::recordFrameCommandBuffer(uint32_t imageIndex) {
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, graphicsPipelineLayout, 0, *descriptorSets[frameIndex], nullptr);
 
     vk::Viewport viewport{
-        .x = 0.0f,
-        .y = 0.0f,
-        .width = static_cast<float>(swapchainExtent.width),
-        .height = static_cast<float>(swapchainExtent.height),
+        .x = gameState.viewportX,
+        .y = gameState.viewportY,
+        .width = gameState.viewportSize,
+        .height = gameState.viewportSize,
         .minDepth = 0.0f,
         .maxDepth = 1.0f
     };
 
     vk::Rect2D scissor{
-        .offset = vk::Offset2D{ 0, 0 },
-        .extent = swapchainExtent
+        .offset = vk::Offset2D{
+            static_cast<int32_t>(gameState.viewportX),
+            static_cast<int32_t>(gameState.viewportY)
+        },
+        .extent = vk::Extent2D{
+            static_cast<uint32_t>(gameState.viewportSize),
+            static_cast<uint32_t>(gameState.viewportSize)
+        }
     };
 
     commandBuffer.setViewport(0, viewport);
@@ -481,6 +489,13 @@ void Renderer::recreateSwapchain() {
     createColorResources();
     createDepthResources();
     createSyncObjects();
+}
+
+void Renderer::updateViewport() {
+    float size = static_cast<float>(std::min(swapchainExtent.width, swapchainExtent.height));
+    gameState.viewportX = (swapchainExtent.width - size) / 2.0f;
+    gameState.viewportY = (swapchainExtent.height - size) / 2.0f;
+    gameState.viewportSize = size;
 }
 
 void Renderer::createSwapchainImageViews() {
@@ -1452,6 +1467,7 @@ std::vector<char> Renderer::readFile(const std::string& filename) {
 }
 
 void Renderer::framebufferResizeCallback(GLFWwindow* window, int width, int height) {
+    if (glfwWindowShouldClose(window)) return;
     Renderer* app = reinterpret_cast<Renderer*>(glfwGetWindowUserPointer(window));
     app->frameBufferResized = true;
 }

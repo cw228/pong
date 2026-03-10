@@ -1,4 +1,5 @@
 #include "gamestate.h"
+#include <algorithm>
 #include <cstdlib>
 #include <print>
 #include <filesystem>
@@ -209,9 +210,9 @@ void updateGameState(GameState& g, InputState& inputState, float deltaTime) {
     }
 
     glm::vec2 mousePos{
-        inputState.mousePos.x / g.frameWidth * 2.0 - 1.0,
-        -(inputState.mousePos.y / g.frameHeight * 2.0 - 1.0),
-    }; 
+        std::clamp((inputState.mousePos.x - g.viewportX) / g.viewportSize * 2.0f - 1.0f, -1.0f, 1.0f),
+        -std::clamp((inputState.mousePos.y - g.viewportY) / g.viewportSize * 2.0f - 1.0f, -1.0f, 1.0f),
+    };
 
     g.player.position.y = mousePos.y;
 
