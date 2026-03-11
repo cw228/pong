@@ -29,14 +29,18 @@ Vulkan application using **C++23**, **Vulkan-Hpp RAII wrappers** (`vk::raii::*`)
 
 - **`src/main.cpp`** — calls `loadGameState()`, constructs `Window`, `InputState`, and `Renderer`, runs the main loop; loop order: `glfwPollEvents()` → `updateInputState()` → `updateGameState()` → `drawFrame()`
 - **`src/inputstate.h`** / **`src/inputstate.cpp`** — `InputState` struct (mouse position, left mouse button, key states); `updateInputState()` polls GLFW each frame
-- **`src/renderer.cpp`** / **`src/renderer.h`** — `Renderer` class encapsulates all Vulkan setup; takes `Window&` and `GameState&` (borrows, does not own); destructor calls `device.waitIdle()` before RAII members are destroyed
-- **`src/window.h`** — `Window` struct wrapping `GLFWwindow*`; constructor takes `(uint32_t width, uint32_t height)`; destructor calls `glfwDestroyWindow` + `glfwTerminate`
+- **`src/renderer.cpp`** / **`src/renderer.h`** — `Renderer` class encapsulates all Vulkan setup; stores `Window&` and `GameState&` (borrows, does not own); destructor calls `device.waitIdle()` before RAII members are destroyed
+- **`src/window.h`** — `Window` struct wrapping `GLFWwindow*`; constructor takes `(uint32_t width, uint32_t height)` but creates a **borderless fullscreen** window using `glfwGetPrimaryMonitor()`; destructor calls `glfwDestroyWindow` + `glfwTerminate`
 - **`src/gamestate.h`** / **`src/gamestate.cpp`** — `GameState`, `Instance`, `Model`, `Texture`, `Text`, `HitBox` structs; `loadGameState()` constructs the game state in C++ (no JSON); `updateGameState(gameState, inputState, deltaTime)` runs game logic each frame
 
 **`Window` is outside the try block in `main.cpp`** intentionally — it must outlive `Renderer` which may throw during construction.
 
 **`Renderer` constructor flow:** calls `glfwSetWindowUserPointer` + `glfwSetFramebufferSizeCallback`, then `loadModels(gameState)` (loads all OBJ models into shared vertex/index buffers, builds `RenderModel` map), then `initVulkan()`:
-`createInstance()` → `setupDebugMessenger()` → `createSurface()` → `pickPhysicalDevice()` → `findQueueFamilies()` → `createLogicalDevice()` → `getQueues()` → `createSwapchain()` → `createSwapchainImageViews()` → `createDescriptorSetLayout()` → `createGraphicsPipeline()` → `createCommandPool()` → `createColorResources()` → `createDepthResources()` → `createTextureImage()` → `createTextureImageView()` → `createTextureSampler()` → `createVertexBuffer()` → `createIndexBuffer()` → `createUniformBuffers()` → `createStorageBuffers()` → `createDescriptorPool()` → `createDescriptorSets()` → `createCommandBuffers()` → `createSyncObjects()`
+`createInstance()` → `setupDebugMessenger()` → `createSurface()` → `pickPhysicalDevice()` → `findQueueFamilies()` → `createLogicalDevice()` → `getQueues()` → `createSwapchain()` → `createSwapchainImageViews()` → `updateViewport()` → `createDescriptorSetLayout()` → `createGraphicsPipeline()` → `createCommandPool()` → `createColorResources()` → `createDepthResources()` → `createTextureImage()` → `createTextureImageView()` → `createTextureSampler()` → `createVertexBuffer()` → `createIndexBuffer()` → `createUniformBuffers()` → `createStorageBuffers()` → `createDescriptorPool()` → `createDescriptorSets()` → `createCommandBuffers()` → `createSyncObjects()`
+
+## Fullscreen & Viewport Letterboxing
+
+The window is borderless fullscreen. A square viewport is centered within the screen to maintain 1:1 aspect ratio (black bars via `loadOp::eClear`). `GameState` stores `viewportX`, `viewportY`, `viewportSize` — computed by `Renderer::updateViewport()` after swapchain creation/recreation. Mouse coordinates in `updateGameState()` are remapped from window space to viewport space and clamped to [-1, 1].
 
 ## Game Data
 
@@ -78,6 +82,8 @@ Depth and MSAA color images are single-buffered (transient within each frame): `
 **GPU hang / system freeze:** Common causes:
 - Shader accesses a descriptor (UBO, texture) that was never bound.
 - In `updateRenderState`, `renderState.instances` **must be cleared at the start** before repopulating from `GameState`. Without the clear, it grows unboundedly; once it exceeds `MAX_INSTANCES`, `memcpy` in `updateStorageBuffer` overflows the mapped storage buffer.
+
+**Fullscreen close jerkiness (macOS):** When closing a fullscreen window, macOS may resize the framebuffer, triggering swapchain recreation and viewport changes that distort rendered objects. Fix: `framebufferResizeCallback` returns early if `glfwWindowShouldClose` is true.
 
 ## Font / Text Assets
 
