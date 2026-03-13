@@ -38,6 +38,10 @@ Vulkan application using **C++23**, **Vulkan-Hpp RAII wrappers** (`vk::raii::*`)
 **`Renderer` constructor flow:** calls `glfwSetWindowUserPointer` + `glfwSetFramebufferSizeCallback`, then `loadModels(gameState)` (loads all OBJ models into shared vertex/index buffers, builds `RenderModel` map), then `initVulkan()`:
 `createInstance()` → `setupDebugMessenger()` → `createSurface()` → `pickPhysicalDevice()` → `findQueueFamilies()` → `createLogicalDevice()` → `getQueues()` → `createSwapchain()` → `createSwapchainImageViews()` → `updateViewport()` → `createDescriptorSetLayout()` → `createGraphicsPipeline()` → `createCommandPool()` → `createColorResources()` → `createDepthResources()` → `createTextureImage()` → `createTextureImageView()` → `createTextureSampler()` → `createVertexBuffer()` → `createIndexBuffer()` → `createUniformBuffers()` → `createStorageBuffers()` → `createDescriptorPool()` → `createDescriptorSets()` → `createCommandBuffers()` → `createSyncObjects()`
 
+## Renderer Refactor (In Progress)
+
+The `Renderer` class is being refactored into a plain `RenderContext` struct with standalone functions (in `src/rendererf.cpp` / `src/rendererf.h`). Vulkan setup functions (e.g., `createInstance`, `createDebugMessenger`) are being extracted as free functions that return RAII objects. The `RenderContext` struct members must be declared in dependency order (e.g., `context` before `instance` before `debugMessenger` before `device`) because C++ destroys struct members in reverse declaration order.
+
 ## Fullscreen & Viewport Letterboxing
 
 The window is borderless fullscreen. A square viewport is centered within the screen to maintain 1:1 aspect ratio (black bars via `loadOp::eClear`). `GameState` stores `viewportX`, `viewportY`, `viewportSize` — computed by `Renderer::updateViewport()` after swapchain creation/recreation. Mouse coordinates in `updateGameState()` are remapped from window space to viewport space and clamped to [-1, 1].

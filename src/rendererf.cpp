@@ -1,3 +1,4 @@
+#include "rendererf.h"
 #include <vulkan/vulkan_raii.hpp>
 
 constexpr int MAX_FRAMES_IN_FLIGHT = 2;
@@ -13,10 +14,65 @@ constexpr bool enableValidationLayers = false;
 constexpr bool enableValidationLayers = true;
 #endif
 
-void initRenderer() {
+std::vector<const char*> getRequiredLayers() {
+    std::vector<const char*> layers;
+    if (enableValidationLayers) {
+        layers.assign(validationLayers.begin(), validationLayers.end());
+    }
+
+    return layers;
 }
 
-vk::Instance createInstance() {
+void ensureLayersSupported(const std::vector<const char*>& requiredLayers, const std::vector<vk::LayerProperties> layerProperties) {
+    for (const char* requiredLayer : requiredLayers) {
+        const bool notSupported = std::ranges::none_of(
+            layerProperties,
+            [&requiredLayer](const vk::LayerProperties& layerProperty) {
+                return strcmp(layerProperty.layerName, requiredLayer) == 0;
+            }
+        );
+
+        if (notSupported) {
+            std::string message = std::format("Required layer not supported: {}", requiredLayer);
+            throw std::runtime_error(message);
+        }
+    }
+}
+
+std::vector<const char*> getRequiredExtentions() {
+    uint32_t glfwRequiredExtensionCount = 0;
+    const char** glfwRequiredExtensions = glfwGetRequiredInstanceExtensions(&glfwRequiredExtensionCount);
+
+    std::vector<const char*> extensions(glfwRequiredExtensions, glfwRequiredExtensions + glfwRequiredExtensionCount);
+
+    if (enableValidationLayers) {
+        extensions.push_back(vk::EXTDebugUtilsExtensionName);
+    }
+
+#ifdef __APPLE__
+        extensions.push_back(vk::KHRPortabilityEnumerationExtensionName);
+#endif
+
+    return extensions;
+}
+
+void ensureExtensionsSupported(const std::vector<const char*>& requiredExtensions, const std::vector<vk::ExtensionProperties>& extensionProperties) {
+    for (const char* requiredExtension : requiredExtensions) {
+        const bool notSupported = std::ranges::none_of(
+            extensionProperties,
+            [&requiredExtension](const vk::ExtensionProperties& extensionProperty) {
+                return strcmp(extensionProperty.extensionName, requiredExtension) == 0;
+            }
+        );
+
+        if (notSupported) {
+            std::string message = std::format("Required extension not supported: {}", requiredExtension);
+            throw std::runtime_error(message);
+        }
+    }
+}
+
+vk::Instance createInstance(vk::raii::Context& context) {
     constexpr vk::ApplicationInfo appInfo{
         .pApplicationName = "Pong",
         .applicationVersion = VK_MAKE_VERSION( 1, 0, 0 ),
@@ -26,10 +82,12 @@ vk::Instance createInstance() {
     };
 
     std::vector<const char*> requiredLayers = getRequiredLayers();
-    ensureLayersSupported(requiredLayers);
+    std::vector<vk::LayerProperties> layerProperties = context.enumerateInstanceLayerProperties();
+    ensureLayersSupported(requiredLayers, layerProperties);
 
     std::vector<const char*> requiredExtentions = getRequiredExtentions();
-    ensureExtensionsSupported(requiredExtentions);
+    std::vector<vk::ExtensionProperties> extensionProperties = context.enumerateInstanceExtensionProperties();
+    ensureExtensionsSupported(requiredExtentions, extensionProperties);
 
     vk::InstanceCreateInfo createInfo{
         .pApplicationInfo = &appInfo,
@@ -46,29 +104,19 @@ vk::Instance createInstance() {
     return vk::raii::Instance(context, createInfo);
 }
 
-std::vector<const char*> getRequiredLayers() {
-    std::vector<const char*> layers;
-    if (enableValidationLayers) {
-        layers.assign(validationLayers.begin(), validationLayers.end());
-    }
+// RenderContext createRenderContext() {
+//     RenderContext context{};
+//     context.instance = createInstance();
+//     return context;
+// }
+//
+//
+// std::vector<const char*> getRequiredLayers() {
+//     std::vector<const char*> layers;
+//     if (enableValidationLayers) {
+//         layers.assign(validationLayers.begin(), validationLayers.end());
+//     }
+//
+//     return layers;
+// }
 
-    return layers;
-}
-
-void ensureLayersSupported(const std::vector<const char*>& requiredLayers) {
-    std::vector<vk::LayerProperties> supportedLayerProperties = context.enumerateInstanceLayerProperties();
-
-    for (const char* requiredLayer : requiredLayers) {
-        const bool notSupported = std::ranges::none_of(
-            supportedLayerProperties,
-            [&requiredLayer](const vk::LayerProperties& layerProperty) {
-                return strcmp(layerProperty.layerName, requiredLayer) == 0;
-            }
-        );
-
-        if (notSupported) {
-            std::string message = std::format("Required layer not supported: {}", requiredLayer);
-            throw std::runtime_error(message);
-        }
-    }
-}

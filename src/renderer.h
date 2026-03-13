@@ -22,6 +22,15 @@ inline const std::vector<const char*> validationLayers = {
     "VK_LAYER_KHRONOS_validation"
 };
 
+inline const std::vector<const char*> deviceExtensions = {
+    vk::KHRSwapchainExtensionName,
+#ifdef __APPLE__
+    "VK_KHR_portability_subset",
+    vk::KHRSynchronization2ExtensionName,
+    vk::KHRDynamicRenderingExtensionName,
+#endif
+};
+
 #ifdef NDEBUG
 constexpr bool enableValidationLayers = false;
 #else
@@ -34,9 +43,20 @@ constexpr bool macOS = true;
 constexpr bool macOS = false;
 #endif
 
+struct RenderContext {
+    vk::raii::Context context;
+    vk::raii::Instance instance = nullptr;
+};
+
 struct QueueFamilyIndices {
-    uint32_t graphicsIndex;
-    uint32_t presentationIndex;
+    uint32_t graphics;
+    uint32_t presentation;
+};
+
+struct SwapchainDetails {
+    vk::PresentModeKHR presentMode;
+    vk::SurfaceFormatKHR format;
+    vk::Extent2D extent;
 };
 
 struct Vertex {
@@ -132,16 +152,8 @@ private:
     vk::raii::SurfaceKHR surface = nullptr;
     vk::raii::Device device = nullptr;
     vk::raii::Queue graphicsQueue = nullptr;
-    vk::raii::Queue presentQueue = nullptr;
+    vk::raii::Queue presentationQueue = nullptr;
     vk::PhysicalDeviceFeatures deviceFeatures;
-    std::vector<const char*> deviceExtensions = {
-        vk::KHRSwapchainExtensionName,
-#ifdef __APPLE__
-        "VK_KHR_portability_subset",
-        vk::KHRSynchronization2ExtensionName,
-        vk::KHRDynamicRenderingExtensionName,
-#endif
-    };
     QueueFamilyIndices queueFamilyIndices;
     vk::raii::SwapchainKHR swapchain = nullptr;
     std::vector<vk::Image> swapchainImages;
@@ -197,13 +209,13 @@ private:
     void updateStorageBuffer(uint32_t currentFrameIndex);
     void recordFrameCommandBuffer(uint32_t imageIndex);
 
-    void createInstance();
-    void createSurface();
-    void pickPhysicalDevice();
-    void findQueueFamilies();
-    void createLogicalDevice();
-    void getQueues();
-    void createSwapchain();
+    // void createInstance();
+    // void createSurface();
+    // void pickPhysicalDevice();
+    // void findQueueFamilies();
+    // void createLogicalDevice();
+    // void getQueues();
+    // void createSwapchain();
     void recreateSwapchain();
     void createSwapchainImageViews();
     void createDescriptorSetLayout();
@@ -224,7 +236,7 @@ private:
     void createCommandBuffers();
     void createSyncObjects();
 
-    vk::SampleCountFlagBits getMaxSampleCount();
+    // vk::SampleCountFlagBits getMaxSampleCount();
     void recordMipmapBlits(
         vk::raii::CommandBuffer& commandBuffer,
         vk::raii::Image& image,
@@ -275,14 +287,14 @@ private:
         uint32_t width,
         uint32_t height
     );
-    std::vector<const char*> getRequiredExtentions();
-    std::vector<const char*> getRequiredLayers();
-    void ensureLayersSupported(const std::vector<const char*>& requiredLayers);
-    void ensureExtensionsSupported(const std::vector<const char*>& requiredExtensions);
-    vk::SurfaceFormatKHR chooseSwapSurfaceFormat();
-    vk::PresentModeKHR chooseSwapPresentMode();
-    vk::Extent2D chooseSwapExtent(vk::SurfaceCapabilitiesKHR capabilities);
-    vk::Extent2D clampedExtent(vk::SurfaceCapabilitiesKHR& capabilities, int& width, int& height);
+    // std::vector<const char*> getRequiredExtentions();
+    // std::vector<const char*> getRequiredLayers();
+    // void ensureLayersSupported(const std::vector<const char*>& requiredLayers);
+    // void ensureExtensionsSupported(const std::vector<const char*>& requiredExtensions);
+    // vk::SurfaceFormatKHR chooseSwapSurfaceFormat();
+    // vk::PresentModeKHR chooseSwapPresentMode();
+    // vk::Extent2D chooseSwapExtent(vk::SurfaceCapabilitiesKHR capabilities);
+    // vk::Extent2D clampedExtent(vk::SurfaceCapabilitiesKHR& capabilities, int& width, int& height);
     vk::raii::ShaderModule createShaderModule(const std::vector<char>& code) const;
 
     static std::vector<char> readFile(const std::string& filename);
@@ -293,5 +305,5 @@ private:
         const vk::DebugUtilsMessengerCallbackDataEXT* pCallbackData,
         void*
     );
-    void setupDebugMessenger();
+    // void setupDebugMessenger();
 };
