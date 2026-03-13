@@ -255,22 +255,15 @@ vk::Extent2D chooseSwapExtent(Window& window, vk::SurfaceCapabilitiesKHR surface
     return clampedExtent(surfaceCapabilities, width, height);
 }
 
-SwapchainDetails getSwapchainDetails() {
-    vk::PresentModeKHR presentMode = chooseSwapPresentMode(physicalDevice, surface);
-    vk::SurfaceCapabilitiesKHR surfaceCapabilities = physicalDevice.getSurfaceCapabilitiesKHR(surface);
-}
-
 vk::raii::SwapchainKHR createSwapchain(
     vk::raii::Device& device,
-    vk::raii::PhysicalDevice& physicalDevice,
     vk::raii::SurfaceKHR& surface,
     vk::SurfaceFormatKHR format,
+    vk::PresentModeKHR presentMode,
     vk::Extent2D extent,
+    vk::SurfaceCapabilitiesKHR surfaceCapabilities,
     QueueFamilyIndices queueFamilyIndices
 ) {
-    vk::PresentModeKHR presentMode = chooseSwapPresentMode(physicalDevice, surface);
-    vk::SurfaceCapabilitiesKHR surfaceCapabilities = physicalDevice.getSurfaceCapabilitiesKHR(surface);
-
     auto minImageCount = std::max(3u, surfaceCapabilities.minImageCount);
     if (surfaceCapabilities.maxImageCount > 0 && minImageCount > surfaceCapabilities.maxImageCount) {
         minImageCount = surfaceCapabilities.maxImageCount;
@@ -333,12 +326,13 @@ void Renderer::initVulkan() {
     vk::raii::Device device = createLogicalDevice(physicalDevice, queueFamilyIndices.graphics);
     vk::raii::Queue graphicsQueue = getQueue(device, queueFamilyIndices.graphics);
     vk::raii::Queue presentationQueue = getQueue(device, queueFamilyIndices.presentation);
-    vk::SurfaceFormatKHR swapchainFormat = chooseSwapSurfaceFormat(physicalDevice, surface);
+
+    vk::SurfaceFormatKHR swapchainImageFormat = chooseSwapSurfaceFormat(physicalDevice, surface);
     vk::PresentModeKHR swapchainPresentMode = chooseSwapPresentMode(physicalDevice, surface);
     vk::SurfaceCapabilitiesKHR surfaceCapabilities = physicalDevice.getSurfaceCapabilitiesKHR(surface);
     vk::Extent2D swapchainExtent = chooseSwapExtent(window, surfaceCapabilities);
     vk::raii::SwapchainKHR swapchain = createSwapchain(
-        device, surface, swapchainFormat, swapchainPresentMode, surfaceCapabilities, swapchainExtent, queueFamilyIndices
+        device, surface, swapchainImageFormat, swapchainPresentMode, swapchainExtent, surfaceCapabilities, queueFamilyIndices
     );
 
     // temporarily set class members until renderContext can be returned
@@ -357,7 +351,7 @@ void Renderer::initVulkan() {
     // don't keep
     this->msaaSamples = msaaSamples; 
     this->queueFamilyIndices = queueFamilyIndices;
-    this->swapchainImageFormat = swapchainFormat.format; // choose in createSwapchain once no longer depended on
+    this->swapchainImageFormat = swapchainImageFormat.format; // choose in createSwapchain once no longer depended on
 
     createSwapchainImageViews();
     updateViewport();
@@ -656,7 +650,13 @@ void Renderer::recreateSwapchain() {
     swapchain = nullptr;
 
     // Recreate
-    createSwapchain();
+    vk::SurfaceFormatKHR swapchainImageFormat = chooseSwapSurfaceFormat(physicalDevice, surface);
+    vk::PresentModeKHR swapchainPresentMode = chooseSwapPresentMode(physicalDevice, surface);
+    vk::SurfaceCapabilitiesKHR surfaceCapabilities = physicalDevice.getSurfaceCapabilitiesKHR(surface);
+    vk::Extent2D swapchainExtent = chooseSwapExtent(window, surfaceCapabilities);
+    swapchain = createSwapchain(
+        device, surface, swapchainImageFormat, swapchainPresentMode, swapchainExtent, surfaceCapabilities, queueFamilyIndices
+    );
 
     createSwapchainImageViews();
     createColorResources();

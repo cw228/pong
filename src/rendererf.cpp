@@ -104,19 +104,3 @@ vk::Instance createInstance(vk::raii::Context& context) {
     return vk::raii::Instance(context, createInfo);
 }
 
-// RenderContext createRenderContext() {
-//     RenderContext context{};
-//     context.instance = createInstance();
-//     return context;
-// }
-//
-//
-// std::vector<const char*> getRequiredLayers() {
-//     std::vector<const char*> layers;
-//     if (enableValidationLayers) {
-//         layers.assign(validationLayers.begin(), validationLayers.end());
-//     }
-//
-//     return layers;
-// }
-
