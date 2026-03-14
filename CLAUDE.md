@@ -40,7 +40,13 @@ Vulkan application using **C++23**, **Vulkan-Hpp RAII wrappers** (`vk::raii::*`)
 
 ## Renderer Refactor (In Progress)
 
-The `Renderer` class is being refactored into a plain `RenderContext` struct with standalone functions (in `src/rendererf.cpp` / `src/rendererf.h`). Vulkan setup functions (e.g., `createInstance`, `createDebugMessenger`) are being extracted as free functions that return RAII objects. The `RenderContext` struct members must be declared in dependency order (e.g., `context` before `instance` before `debugMessenger` before `device`) because C++ destroys struct members in reverse declaration order.
+The `Renderer` class is being refactored into a plain struct with standalone functions. Progress so far:
+
+- **`src/context.h`** / **`src/context.cpp`** — `VulkanContext` plain aggregate struct (context, instance, debugMessenger, surface, physicalDevice, device, queues, queueFamilies) initialized via `createVulkanContext(window)` factory function. Vulkan setup functions (`createInstance`, `createDebugMessenger`, `createSurface`, `choosePhysicalDevice`, `findQueueFamilies`, `createLogicalDevice`) are free functions that return RAII objects.
+- **`Renderer`** holds a `VulkanContext vContext` member, initialized in its member initializer list via the factory function.
+- **`src/rendererf.cpp`** — additional refactored functions (in progress).
+
+Struct members must be declared in dependency order (e.g., `context` before `instance` before `debugMessenger` before `device`) because C++ destroys struct members in reverse declaration order. Factory functions enforce correct initialization order through local variable dependencies (can't use a variable before it's declared).
 
 ## Fullscreen & Viewport Letterboxing
 

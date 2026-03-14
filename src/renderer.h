@@ -1,7 +1,7 @@
 #pragma once
 
 #include "window.h"
-#include "context.hpp"
+#include "context.h"
 #include "gamestate.h"
 
 #include <cstdint>
@@ -19,39 +19,9 @@ constexpr int MAX_INSTANCES = 100;
 constexpr int MAX_TEXTURES = 10;
 inline const std::string TEXTURE_PATH = "textures/viking_room.png";
 
-inline const std::vector<const char*> validationLayers = {
-    "VK_LAYER_KHRONOS_validation"
-};
-
-inline const std::vector<const char*> deviceExtensions = {
-    vk::KHRSwapchainExtensionName,
-#ifdef __APPLE__
-    "VK_KHR_portability_subset",
-    vk::KHRSynchronization2ExtensionName,
-    vk::KHRDynamicRenderingExtensionName,
-#endif
-};
-
-#ifdef NDEBUG
-constexpr bool enableValidationLayers = false;
-#else
-constexpr bool enableValidationLayers = true;
-#endif
-
-#ifdef __APPLE__
-constexpr bool macOS = true;
-#else
-constexpr bool macOS = false;
-#endif
-
 struct RenderContext {
     vk::raii::Context context;
     vk::raii::Instance instance = nullptr;
-};
-
-struct QueueFamilyIndices {
-    uint32_t graphics;
-    uint32_t presentation;
 };
 
 struct Vertex {
@@ -141,19 +111,9 @@ private:
     GameState& gameState;
     RenderState renderState;
 
-    // vk::raii::Context context;
-    // vk::raii::Instance instance = nullptr;
-    // vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;
-    // vk::raii::PhysicalDevice physicalDevice = nullptr;
-    // vk::raii::SurfaceKHR surface = nullptr;
-    // vk::raii::Device device = nullptr;
-    // vk::raii::Queue graphicsQueue = nullptr;
-    // vk::raii::Queue presentationQueue = nullptr;
-
     VulkanContext vContext;
 
     vk::PhysicalDeviceFeatures deviceFeatures;
-    QueueFamilyIndices queueFamilyIndices;
     vk::raii::SwapchainKHR swapchain = nullptr;
     std::vector<vk::Image> swapchainImages;
     vk::Format swapchainImageFormat = vk::Format::eUndefined;
@@ -208,13 +168,6 @@ private:
     void updateStorageBuffer(uint32_t currentFrameIndex);
     void recordFrameCommandBuffer(uint32_t imageIndex);
 
-    // void createInstance();
-    // void createSurface();
-    // void pickPhysicalDevice();
-    // void findQueueFamilies();
-    // void createLogicalDevice();
-    // void getQueues();
-    // void createSwapchain();
     void recreateSwapchain();
     void createSwapchainImageViews();
     void createDescriptorSetLayout();
@@ -235,7 +188,6 @@ private:
     void createCommandBuffers();
     void createSyncObjects();
 
-    // vk::SampleCountFlagBits getMaxSampleCount();
     void recordMipmapBlits(
         vk::raii::CommandBuffer& commandBuffer,
         vk::raii::Image& image,
@@ -286,23 +238,8 @@ private:
         uint32_t width,
         uint32_t height
     );
-    // std::vector<const char*> getRequiredExtentions();
-    // std::vector<const char*> getRequiredLayers();
-    // void ensureLayersSupported(const std::vector<const char*>& requiredLayers);
-    // void ensureExtensionsSupported(const std::vector<const char*>& requiredExtensions);
-    // vk::SurfaceFormatKHR chooseSwapSurfaceFormat();
-    // vk::PresentModeKHR chooseSwapPresentMode();
-    // vk::Extent2D chooseSwapExtent(vk::SurfaceCapabilitiesKHR capabilities);
-    // vk::Extent2D clampedExtent(vk::SurfaceCapabilitiesKHR& capabilities, int& width, int& height);
     vk::raii::ShaderModule createShaderModule(const std::vector<char>& code) const;
 
     static std::vector<char> readFile(const std::string& filename);
     static void framebufferResizeCallback(GLFWwindow* window, int width, int height);
-    static VKAPI_ATTR vk::Bool32 VKAPI_CALL debugCallback(
-        vk::DebugUtilsMessageSeverityFlagBitsEXT severity,
-        vk::DebugUtilsMessageTypeFlagsEXT type,
-        const vk::DebugUtilsMessengerCallbackDataEXT* pCallbackData,
-        void*
-    );
-    // void setupDebugMessenger();
 };

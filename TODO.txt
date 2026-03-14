@@ -1,9 +1,0 @@
-PONG
-
-Game
-[ ] control ball direction
-[ ] click to start
-[ ] keep score
-[ ] play to 6
-[ ] show win/lose, restart
-

@@ -18,7 +18,7 @@ find_path(TINYOBJLOADER_INCLUDE_DIR tiny_obj_loader.h REQUIRED)
 
 # Create executable
 add_executable(
-    pong src/main.cpp src/renderer.cpp src/swapchain.hpp src/context.hpp src/gamestate.cpp src/inputstate.cpp src/libs.cpp)
+    pong src/main.cpp src/renderer.cpp src/context.cpp src/swapchain.hpp src/gamestate.cpp src/inputstate.cpp src/libs.cpp)
 
 # Link libraries
 target_link_libraries(pong PRIVATE
