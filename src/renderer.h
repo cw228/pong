@@ -1,6 +1,7 @@
 #pragma once
 
 #include "window.h"
+#include "context.hpp"
 #include "gamestate.h"
 
 #include <cstdint>
@@ -51,12 +52,6 @@ struct RenderContext {
 struct QueueFamilyIndices {
     uint32_t graphics;
     uint32_t presentation;
-};
-
-struct SwapchainDetails {
-    vk::PresentModeKHR presentMode;
-    vk::SurfaceFormatKHR format;
-    vk::Extent2D extent;
 };
 
 struct Vertex {
@@ -145,14 +140,18 @@ private:
     Window& window;
     GameState& gameState;
     RenderState renderState;
-    vk::raii::Context context;
-    vk::raii::Instance instance = nullptr;
-    vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;
-    vk::raii::PhysicalDevice physicalDevice = nullptr;
-    vk::raii::SurfaceKHR surface = nullptr;
-    vk::raii::Device device = nullptr;
-    vk::raii::Queue graphicsQueue = nullptr;
-    vk::raii::Queue presentationQueue = nullptr;
+
+    // vk::raii::Context context;
+    // vk::raii::Instance instance = nullptr;
+    // vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;
+    // vk::raii::PhysicalDevice physicalDevice = nullptr;
+    // vk::raii::SurfaceKHR surface = nullptr;
+    // vk::raii::Device device = nullptr;
+    // vk::raii::Queue graphicsQueue = nullptr;
+    // vk::raii::Queue presentationQueue = nullptr;
+
+    VulkanContext vContext;
+
     vk::PhysicalDeviceFeatures deviceFeatures;
     QueueFamilyIndices queueFamilyIndices;
     vk::raii::SwapchainKHR swapchain = nullptr;
