@@ -687,8 +687,12 @@ void Renderer::recreateSwapchain() {
     swapchain = createSwapchain(
         vContext.device, vContext.surface, swapchainImageFormat, swapchainPresentMode, swapchainExtent, surfaceCapabilities, queueFamilyIndices
     );
+    this->swapchainImages = swapchain.getImages();
+    this->swapchainExtent = swapchainExtent;
+    this->swapchainImageFormat = swapchainImageFormat.format;
 
     createSwapchainImageViews();
+    updateViewport();
     createColorResources();
     createDepthResources();
     createSyncObjects();
