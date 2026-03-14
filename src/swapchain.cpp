@@ -1,5 +1,3 @@
-// #pragma once
-//
 // #include "context.h"
 // #include "window.h"
 // #include "vulkan/vulkan_raii.hpp"
