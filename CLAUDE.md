@@ -35,16 +35,16 @@ Vulkan application using **C++23**, **Vulkan-Hpp RAII wrappers** (`vk::raii::*`)
 
 **`Window` is outside the try block in `main.cpp`** intentionally — it must outlive `Renderer` which may throw during construction.
 
-**`Renderer` constructor flow:** calls `glfwSetWindowUserPointer` + `glfwSetFramebufferSizeCallback`, then `loadModels(gameState)` (loads all OBJ models into shared vertex/index buffers, builds `RenderModel` map), then `initVulkan()`:
-`createInstance()` → `setupDebugMessenger()` → `createSurface()` → `pickPhysicalDevice()` → `findQueueFamilies()` → `createLogicalDevice()` → `getQueues()` → `createSwapchain()` → `createSwapchainImageViews()` → `updateViewport()` → `createDescriptorSetLayout()` → `createGraphicsPipeline()` → `createCommandPool()` → `createColorResources()` → `createDepthResources()` → `createTextureImage()` → `createTextureImageView()` → `createTextureSampler()` → `createVertexBuffer()` → `createIndexBuffer()` → `createUniformBuffers()` → `createStorageBuffers()` → `createDescriptorPool()` → `createDescriptorSets()` → `createCommandBuffers()` → `createSyncObjects()`
+**`Renderer` constructor flow:** member initializer list creates `VulkanContext` and `RenderTargets`, then body calls `glfwSetWindowUserPointer` + `glfwSetFramebufferSizeCallback`, then `loadModels(gameState)` (loads all OBJ models into shared vertex/index buffers, builds `RenderModel` map), then `initVulkan()`:
+`updateViewport()` → `createDescriptorSetLayout()` → `createGraphicsPipeline()` → `createCommandPool()` → `createTextureImage()` → `createTextureImageView()` → `createTextureSampler()` → `createVertexBuffer()` → `createIndexBuffer()` → `createUniformBuffers()` → `createStorageBuffers()` → `createDescriptorPool()` → `createDescriptorSets()` → `createCommandBuffers()` → `createSyncObjects()`
 
 ## Renderer Refactor (In Progress)
 
 The `Renderer` class is being refactored into a plain struct with standalone functions. Progress so far:
 
 - **`src/context.h`** / **`src/context.cpp`** — `VulkanContext` plain aggregate struct (context, instance, debugMessenger, surface, physicalDevice, device, queues, queueFamilies) initialized via `createVulkanContext(window)` factory function. Vulkan setup functions (`createInstance`, `createDebugMessenger`, `createSurface`, `choosePhysicalDevice`, `findQueueFamilies`, `createLogicalDevice`) are free functions that return RAII objects.
-- **`Renderer`** holds a `VulkanContext vContext` member, initialized in its member initializer list via the factory function.
-- **`src/rendererf.cpp`** — additional refactored functions (in progress).
+- **`src/render_targets.h`** / **`src/render_targets.cpp`** — `RenderTargets` struct encapsulating swapchain, swapchain image views, MSAA color image/view/memory, depth image/view/memory, and per-image `renderCompleteSemaphores`. Constructor takes `const VulkanContext&` and an optional `vk::raii::SwapchainKHR oldSwapchain` (for swapchain recreation). Chooses surface format, present mode, and extent, then creates all resources in one shot.
+- **`Renderer`** holds a `VulkanContext vContext` and `RenderTargets renderTargets` member, both initialized in its member initializer list.
 
 Struct members must be declared in dependency order (e.g., `context` before `instance` before `debugMessenger` before `device`) because C++ destroys struct members in reverse declaration order. Factory functions enforce correct initialization order through local variable dependencies (can't use a variable before it's declared).
 

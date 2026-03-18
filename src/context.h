@@ -14,6 +14,7 @@ struct Queues {
 };
 
 struct VulkanContext {
+    Window& window;
     vk::raii::Context context;
     vk::raii::Instance instance = nullptr;
     vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;
@@ -22,6 +23,8 @@ struct VulkanContext {
     vk::raii::Device device = nullptr;
     Queues queues;
     QueueFamilies queueFamilies;
+    vk::SampleCountFlagBits msaaSamples;
+    uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const;
 
     VulkanContext(Window& window);
 };

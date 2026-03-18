@@ -2,6 +2,7 @@
 
 #include "window.h"
 #include "context.h"
+#include "render_targets.h"
 #include "gamestate.h"
 
 #include <cstdint>
@@ -18,11 +19,6 @@ constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 constexpr int MAX_INSTANCES = 100;
 constexpr int MAX_TEXTURES = 10;
 inline const std::string TEXTURE_PATH = "textures/viking_room.png";
-
-struct RenderContext {
-    vk::raii::Context context;
-    vk::raii::Instance instance = nullptr;
-};
 
 struct Vertex {
     glm::vec3 position;
@@ -112,13 +108,8 @@ private:
     RenderState renderState;
 
     VulkanContext vContext;
+    RenderTargets renderTargets;
 
-    vk::PhysicalDeviceFeatures deviceFeatures;
-    vk::raii::SwapchainKHR swapchain = nullptr;
-    std::vector<vk::Image> swapchainImages;
-    vk::Format swapchainImageFormat = vk::Format::eUndefined;
-    vk::Extent2D swapchainExtent;
-    std::vector<vk::raii::ImageView> swapchainImageViews;
     vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
     vk::raii::PipelineLayout graphicsPipelineLayout = nullptr;
     vk::raii::Pipeline graphicsPipeline = nullptr;
@@ -126,7 +117,7 @@ private:
     std::vector<vk::raii::CommandBuffer> frameCommandBuffers;
     std::vector<vk::raii::Fence> drawFences;
     std::vector<vk::raii::Semaphore> presentCompleteSemaphores;
-    std::vector<vk::raii::Semaphore> renderCompleteSemaphores;
+    // std::vector<vk::raii::Semaphore> renderCompleteSemaphores;
     uint32_t frameIndex = 0;
     bool frameBufferResized = false;
     std::vector<Vertex> vertices;
@@ -149,14 +140,18 @@ private:
     vk::raii::DeviceMemory textureImageMemory = nullptr;
     vk::raii::ImageView textureImageView = nullptr;
     vk::raii::Sampler textureSampler = nullptr;
-    vk::raii::Image depthImage = nullptr;
-    vk::raii::DeviceMemory depthImageMemory = nullptr;
-    vk::raii::ImageView depthImageView = nullptr;
-    vk::raii::Image colorImage = nullptr;
-    vk::raii::DeviceMemory colorImageMemory = nullptr;
-    vk::raii::ImageView colorImageView = nullptr;
     uint32_t mipLevels;
-    vk::SampleCountFlagBits msaaSamples = vk::SampleCountFlagBits::e1;
+
+    // vk::raii::Image depthImage = nullptr;
+    // vk::raii::DeviceMemory depthImageMemory = nullptr;
+    // vk::raii::ImageView depthImageView = nullptr;
+    // vk::raii::Image colorImage = nullptr;
+    // vk::raii::DeviceMemory colorImageMemory = nullptr;
+    // vk::raii::ImageView colorImageView = nullptr;
+
+
+    // vk::SampleCountFlagBits msaaSamples = vk::SampleCountFlagBits::e1;
+
     // mk:members
 
     void loadModels(GameState& gameState);
@@ -168,13 +163,13 @@ private:
     void updateStorageBuffer(uint32_t currentFrameIndex);
     void recordFrameCommandBuffer(uint32_t imageIndex);
 
-    void recreateSwapchain();
-    void createSwapchainImageViews();
+    void recreateRenderTargets();
+    // void createSwapchainImageViews();
     void createDescriptorSetLayout();
     void createGraphicsPipeline();
     void createCommandPool();
-    void createColorResources();
-    void createDepthResources();
+    // void createColorResources();
+    // void createDepthResources();
     void createTextureImage();
     void createTextureImageView();
     void createTextureSampler();

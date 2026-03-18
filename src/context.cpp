@@ -1,4 +1,5 @@
 #include <iostream>
+#include <bit>
 #include "vulkan/vulkan_raii.hpp"
 #include "context.h"
 #include "window.h"
@@ -207,7 +208,13 @@ QueueFamilies findQueueFamilies(vk::raii::PhysicalDevice& physicalDevice, vk::ra
     throw std::runtime_error("failed to find queue families");
 }
 
-VulkanContext::VulkanContext(Window& window) {
+vk::SampleCountFlagBits getMaxSampleCount(vk::raii::PhysicalDevice& physicalDevice) {
+    vk::PhysicalDeviceProperties props = physicalDevice.getProperties();
+    vk::SampleCountFlags counts = props.limits.framebufferColorSampleCounts & props.limits.framebufferDepthSampleCounts;
+    return static_cast<vk::SampleCountFlagBits>(std::bit_floor(static_cast<uint32_t>(counts)));
+}
+
+VulkanContext::VulkanContext(Window& window) : window(window) {
     instance = createInstance(context);
 #ifndef NDEBUG
     debugMessenger = createDebugMessenger(instance, debugCallback);
@@ -218,5 +225,20 @@ VulkanContext::VulkanContext(Window& window) {
     device = createLogicalDevice(physicalDevice, queueFamilies.graphics);
     queues.graphics = device.getQueue(queueFamilies.graphics, 0);
     queues.presentation = device.getQueue(queueFamilies.presentation, 0);
+    msaaSamples = getMaxSampleCount(physicalDevice);
+
 }
+
+uint32_t VulkanContext::findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) const {
+    vk::PhysicalDeviceMemoryProperties memProperties = physicalDevice.getMemoryProperties();
+
+    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+        if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+            return i;
+        }
+    }
+
+    throw std::runtime_error("failed to find suitable memory type!");
+}
+
 
